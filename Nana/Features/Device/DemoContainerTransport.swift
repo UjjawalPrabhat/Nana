@@ -5,20 +5,21 @@ import Foundation
 final class DemoContainerTransport: ContainerTransport {
     var onEvent: ((ContainerEvent) -> Void)?
 
+    static let pairedKey = "demoContainer.paired"
+    private static let countKey = "demoContainer.count"
+
     private let defaults: UserDefaults
-    private let pairedKey = "demoContainer.paired"
-    private let countKey = "demoContainer.count"
     private let capacity = SupplyLedger.capacity
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    var isPaired: Bool { defaults.bool(forKey: pairedKey) }
+    private var isPaired: Bool { defaults.bool(forKey: Self.pairedKey) }
 
     private var count: Int {
-        get { defaults.object(forKey: countKey) as? Int ?? 6 }
-        set { defaults.set(min(max(newValue, 0), capacity), forKey: countKey) }
+        get { defaults.object(forKey: Self.countKey) as? Int ?? 6 }
+        set { defaults.set(min(max(newValue, 0), capacity), forKey: Self.countKey) }
     }
 
     func start() {
@@ -31,13 +32,13 @@ final class DemoContainerTransport: ContainerTransport {
 
     func pair() async throws -> Bool {
         try await Task.sleep(for: .seconds(1))
-        defaults.set(true, forKey: pairedKey)
+        defaults.set(true, forKey: Self.pairedKey)
         connect()
         return true
     }
 
     func forget() async throws {
-        defaults.set(false, forKey: pairedKey)
+        defaults.set(false, forKey: Self.pairedKey)
         onEvent?(.connection(.notPaired))
     }
 
@@ -63,8 +64,6 @@ final class DemoContainerTransport: ContainerTransport {
     }
 
     private func publishStock() {
-        // Round-trip through the real packet format so the parser is exercised too.
-        let packet = StockPacket.encode(StockReading(count: count))
-        if let reading = StockPacket.parse(packet) { onEvent?(.stock(reading)) }
+        onEvent?(.stock(StockReading(count: count)))
     }
 }

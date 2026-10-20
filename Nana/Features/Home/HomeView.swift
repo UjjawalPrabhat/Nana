@@ -6,7 +6,7 @@ struct HomeView: View {
     @Query private var completions: [LessonCompletion]
     @Environment(NanaCompanion.self) private var companion
     @State private var activeLesson: Curriculum.Lesson?
-    private let library = ContentLibrary.bundled
+    @Environment(\.contentLibrary) private var library
     @AppStorage(AppSettings.lowSupplyThreshold) private var lowThreshold = AppSettings.defaultLowSupplyThreshold
     @AppStorage(AppSettings.lowSupplyReminderOn) private var reminderOn = false
     @AppStorage(AppSettings.showNanaOnHome) private var showNana = true
@@ -43,8 +43,7 @@ struct HomeView: View {
                     )
 
                     TodayLessonCard(
-                        lesson: library.todaysLesson(completed: Set(completions.map(\.lessonID))),
-                        library: library
+                        lesson: library.todaysLesson(completed: Set(completions.map(\.lessonID)))
                     ) { activeLesson = $0 }
 
                     ContainerRow { sheet = .pair }
@@ -67,7 +66,7 @@ struct HomeView: View {
             }
         }
         .fullScreenCover(item: $activeLesson) { lesson in
-            LessonPlayerView(lesson: lesson, library: library)
+            LessonPlayerView(lesson: lesson)
         }
         .sheet(item: $sheet) { sheet in
             switch sheet {

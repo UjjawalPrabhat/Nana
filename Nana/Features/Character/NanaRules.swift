@@ -21,7 +21,7 @@ nonisolated enum NanaMood: CaseIterable, Sendable {
     case happy
     /// The user has been away; Nana wakes up glad to see them.
     case resting
-    /// Nana just reached a new growth stage.
+    /// Nana just reached a new growth stage. Shown on the lesson-complete screen.
     case proud
 
     var title: String {
@@ -59,10 +59,8 @@ nonisolated enum NanaRules {
         now: Date,
         lastLessonCompletedAt: Date?,
         previousVisitAt: Date?,
-        justGrew: Bool,
         calendar: Calendar = .current
     ) -> NanaMood {
-        if justGrew { return .proud }
         if let lastLessonCompletedAt, calendar.isDate(lastLessonCompletedAt, inSameDayAs: now) {
             return .happy
         }

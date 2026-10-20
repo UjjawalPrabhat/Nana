@@ -9,7 +9,6 @@ nonisolated enum SupplyLedger {
         var date: Date
         var kind: SupplyEvent.Kind
         var amount: Int
-        var source: SupplyEvent.Source
     }
 
     struct Status: Equatable, Sendable {
@@ -29,14 +28,11 @@ nonisolated enum SupplyLedger {
     static func status(for entries: [Entry]) -> Status? {
         var status: Status?
         for entry in entries.sorted(by: { $0.date < $1.date }) {
-            let count: Int
-            switch entry.kind {
-            case .refill:
-                count = (status?.count ?? 0) + entry.amount
-            case .adjust, .deviceReading:
-                count = entry.amount
+            let count = switch entry.kind {
+            case .refill: (status?.count ?? 0) + entry.amount
+            case .adjust, .deviceReading: entry.amount
             }
-            status = Status(count: clamp(count), updatedAt: entry.date, source: entry.source)
+            status = Status(count: min(max(count, 0), capacity), updatedAt: entry.date, source: entry.kind.source)
         }
         return status
     }
@@ -52,14 +48,10 @@ nonisolated enum SupplyLedger {
     static func maxRefill(currentCount: Int) -> Int {
         max(0, capacity - currentCount)
     }
-
-    static func clamp(_ count: Int) -> Int {
-        min(max(count, 0), capacity)
-    }
 }
 
 extension SupplyEvent {
     var ledgerEntry: SupplyLedger.Entry {
-        SupplyLedger.Entry(date: date, kind: kind, amount: amount, source: source)
+        SupplyLedger.Entry(date: date, kind: kind, amount: amount)
     }
 }

@@ -24,23 +24,16 @@ struct StatusBadge: View {
     }
 
     var title: LocalizedStringKey
-    var systemImage: String?
+    var systemImage: String
     var tone: Tone = .neutral
 
     var body: some View {
-        Label {
-            Text(title)
-        } icon: {
-            if let systemImage {
-                Image(systemName: systemImage)
-            }
-        }
-        .labelStyle(.titleAndIcon)
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(foreground)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(background, in: .capsule)
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(tone == .warning ? Color.peach : Color.surfaceMuted, in: .capsule)
     }
 
     private var foreground: Color {
@@ -48,14 +41,6 @@ struct StatusBadge: View {
         case .positive: .brandGreen
         case .warning: .textPrimary
         case .neutral: .textSecondary
-        }
-    }
-
-    private var background: Color {
-        switch tone {
-        case .positive: .surfaceMuted
-        case .warning: .peach
-        case .neutral: .surfaceMuted
         }
     }
 }

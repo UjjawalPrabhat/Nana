@@ -13,17 +13,15 @@ nonisolated enum NanaGATT {
     static let firmwareRevision = "2A26"
 }
 
+/// The app only sends `identify` so far; calibration (0x02, 0x03) is firmware-side.
 nonisolated enum ContainerCommand: UInt8, Sendable {
     case identify = 0x01
-    case calibrateEmpty = 0x02
-    case calibrateFull = 0x03
 }
 
 nonisolated struct StockReading: Equatable, Sendable {
     var count: Int?
     var levelPercent: Int?
     var lidOpen = false
-    var needsCalibration = false
 
     /// The exact count if the sensor has one, otherwise a count estimated from the fill level.
     func estimatedCount(capacity: Int) -> Int? {
@@ -43,7 +41,6 @@ nonisolated enum StockPacket {
         static let countValid: UInt8 = 1 << 0
         static let levelValid: UInt8 = 1 << 1
         static let lidOpen: UInt8 = 1 << 2
-        static let needsCalibration: UInt8 = 1 << 3
     }
 
     /// Parses the 4-byte Stock characteristic. Returns `nil` for unknown versions or short packets.
@@ -56,24 +53,8 @@ nonisolated enum StockPacket {
         return StockReading(
             count: count,
             levelPercent: level,
-            lidOpen: flags & Flag.lidOpen != 0,
-            needsCalibration: flags & Flag.needsCalibration != 0
+            lidOpen: flags & Flag.lidOpen != 0
         )
-    }
-
-    /// Encodes a reading, used by the demo container and tests.
-    static func encode(_ reading: StockReading) -> Data {
-        var flags: UInt8 = 0
-        if reading.count != nil { flags |= Flag.countValid }
-        if reading.levelPercent != nil { flags |= Flag.levelValid }
-        if reading.lidOpen { flags |= Flag.lidOpen }
-        if reading.needsCalibration { flags |= Flag.needsCalibration }
-        return Data([
-            supportedVersion,
-            flags,
-            reading.count.map { UInt8(clamping: $0) } ?? unknown,
-            reading.levelPercent.map { UInt8(clamping: $0) } ?? unknown,
-        ])
     }
 }
 
@@ -95,7 +76,6 @@ nonisolated enum ContainerEvent: Sendable {
 /// A way of talking to the container: real Bluetooth or the in-memory demo.
 protocol ContainerTransport: AnyObject {
     var onEvent: ((ContainerEvent) -> Void)? { get set }
-    var isPaired: Bool { get }
     /// Begins restoring any existing pairing and connection.
     func start()
     /// Shows the system pairing UI. Returns `true` if a container was added.

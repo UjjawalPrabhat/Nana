@@ -17,10 +17,10 @@ struct ContainerProtocolTests {
         #expect(reading?.isEstimate == true)
     }
 
-    @Test func flagsAreDecoded() {
+    @Test func lidOpenFlagIsDecodedAndUnknownFlagsIgnored() {
         let reading = StockPacket.parse(Data([0x01, 0b1101, 0x03, 0xFF]))
         #expect(reading?.lidOpen == true)
-        #expect(reading?.needsCalibration == true)
+        #expect(reading?.count == 3)
     }
 
     @Test func rejectsUnknownVersionAndShortPackets() {
@@ -31,11 +31,6 @@ struct ContainerProtocolTests {
     @Test func unknownValuesAreIgnoredEvenIfFlagged() {
         let reading = StockPacket.parse(Data([0x01, 0x03, 0xFF, 0xFF]))
         #expect(reading?.estimatedCount(capacity: 12) == nil)
-    }
-
-    @Test func encodeRoundTrips() {
-        let original = StockReading(count: 4, levelPercent: 33, lidOpen: true, needsCalibration: false)
-        #expect(StockPacket.parse(StockPacket.encode(original)) == original)
     }
 
     @Test func countAboveCapacityIsClamped() {

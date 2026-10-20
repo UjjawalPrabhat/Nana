@@ -74,7 +74,7 @@ struct PrivacySettingsView: View {
 
 /// About Nana, how lessons were made, and every source.
 struct HelpView: View {
-    var library: ContentLibrary = .bundled
+    @Environment(\.contentLibrary) private var library
 
     var body: some View {
         List {

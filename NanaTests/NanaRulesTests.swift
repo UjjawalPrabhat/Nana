@@ -12,25 +12,20 @@ struct NanaRulesTests {
         #expect(NanaRules.stage(lessonsCompleted: lessons, thresholds: thresholds) == expected)
     }
 
-    @Test func proudWinsWhenNanaJustGrew() {
-        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: now, previousVisitAt: nil, justGrew: true, calendar: calendar)
-        #expect(mood == .proud)
-    }
-
     @Test func happyAfterTodaysLesson() {
-        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: now.addingTimeInterval(-600), previousVisitAt: nil, justGrew: false, calendar: calendar)
+        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: now.addingTimeInterval(-600), previousVisitAt: nil, calendar: calendar)
         #expect(mood == .happy)
     }
 
     @Test func restingAfterTimeAway() {
         let away = now.addingTimeInterval(-4 * 86_400)
-        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: away, previousVisitAt: away, justGrew: false, calendar: calendar)
+        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: away, previousVisitAt: away, calendar: calendar)
         #expect(mood == .resting)
     }
 
     @Test func curiousByDefault() {
         let yesterday = now.addingTimeInterval(-86_400)
-        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: yesterday, previousVisitAt: yesterday, justGrew: false, calendar: calendar)
+        let mood = NanaRules.mood(now: now, lastLessonCompletedAt: yesterday, previousVisitAt: yesterday, calendar: calendar)
         #expect(mood == .curious)
     }
 }

@@ -5,9 +5,8 @@ import Testing
 struct SupplyLedgerTests {
     private let start = Date(timeIntervalSince1970: 1_000_000)
 
-    private func entry(_ minutes: Double, _ kind: SupplyEvent.Kind, _ amount: Int,
-                       _ source: SupplyEvent.Source = .user) -> SupplyLedger.Entry {
-        .init(date: start.addingTimeInterval(minutes * 60), kind: kind, amount: amount, source: source)
+    private func entry(_ minutes: Double, _ kind: SupplyEvent.Kind, _ amount: Int) -> SupplyLedger.Entry {
+        .init(date: start.addingTimeInterval(minutes * 60), kind: kind, amount: amount)
     }
 
     @Test func noEventsMeansNotSet() {
@@ -32,7 +31,7 @@ struct SupplyLedgerTests {
     }
 
     @Test func deviceReadingOverridesAndCarriesSource() {
-        let status = SupplyLedger.status(for: [entry(0, .adjust, 10), entry(1, .deviceReading, 3, .container)])
+        let status = SupplyLedger.status(for: [entry(0, .adjust, 10), entry(1, .deviceReading, 3)])
         #expect(status?.count == 3)
         #expect(status?.source == .container)
     }

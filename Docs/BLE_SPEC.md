@@ -64,6 +64,8 @@ Example: 6 items, exact count, lid closed → `01 01 06 FF`.
 
 Unknown opcodes → respond with ATT error `0x80` (application error).
 
+> App support in v1: the app sends only `identify` and ignores the `needsCalibration` flag. Calibration UI comes later, so firmware may calibrate from the button for now.
+
 ### 3.4 Standard services (please include)
 
 | Service | Characteristic | Notes |

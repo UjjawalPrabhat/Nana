@@ -27,8 +27,7 @@ final class NanaCompanion {
         var mood = NanaRules.mood(
             now: now,
             lastLessonCompletedAt: completions.map(\.completedAt).max(),
-            previousVisitAt: previousVisitAt,
-            justGrew: false
+            previousVisitAt: previousVisitAt
         )
         if mood == .resting, hasGreeted { mood = .curious }
         return NanaSnapshot(stage: stage, mood: mood, completedCount: completions.count, thresholds: thresholds)

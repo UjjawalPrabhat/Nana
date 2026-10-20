@@ -4,7 +4,7 @@ import SwiftUI
 /// Full-screen lesson: cards → quick check → completion.
 struct LessonPlayerView: View {
     var lesson: Curriculum.Lesson
-    var library: ContentLibrary = .bundled
+    @Environment(\.contentLibrary) private var library
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -87,11 +87,12 @@ struct LessonPlayerView: View {
 
     private func finish() {
         let before = companion.snapshot(library: library, completions: completions)
+        var all = completions
         if !completions.contains(where: { $0.lessonID == lesson.id }) {
-            modelContext.insert(LessonCompletion(lessonID: lesson.id))
-            try? modelContext.save()
+            let completion = LessonCompletion(lessonID: lesson.id)
+            modelContext.insert(completion)
+            all.append(completion)
         }
-        let all = (try? modelContext.fetch(FetchDescriptor<LessonCompletion>())) ?? completions
         var after = companion.snapshot(library: library, completions: all)
         let grew = after.stage > before.stage
         after.mood = grew ? .proud : .happy
@@ -359,37 +360,6 @@ struct LessonCompleteView: View {
             .padding(.bottom, 8)
         }
         .sensoryFeedback(.success, trigger: result.grew)
-    }
-}
-
-struct GrowthProgressCard: View {
-    var snapshot: NanaSnapshot
-
-    var body: some View {
-        NanaCard(padding: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Nana · \(snapshot.stage.title)")
-                        .font(.headline)
-                    Spacer()
-                    if let progress = snapshot.progressToNextStage, let next = snapshot.nextStage {
-                        Text("\(progress.done) of \(progress.total) to \(next.title)")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.textSecondary)
-                    } else {
-                        Text("Fully grown")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                }
-                if let progress = snapshot.progressToNextStage {
-                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                        .tint(.brandGreen)
-                }
-            }
-            .foregroundStyle(Color.textPrimary)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 

@@ -28,7 +28,7 @@ final class ContainerStore {
         self.defaults = defaults
         let usesDemo = forceDemo ?? (defaults.object(forKey: Self.useDemoKey) as? Bool ?? Self.isSimulator)
         self.usesDemo = usesDemo
-        self.transport = usesDemo ? DemoContainerTransport(defaults: defaults) : BLEContainerTransport()
+        self.transport = Self.makeTransport(demo: usesDemo, defaults: defaults)
         self.lastSeen = defaults.object(forKey: Self.lastSeenKey) as? Date
         attachTransport()
     }
@@ -44,9 +44,7 @@ final class ContainerStore {
 
     func forget() async throws {
         try await transport.forget()
-        battery = nil
-        firmware = nil
-        lastReading = nil
+        clearDeviceInfo()
     }
 
     func identify() {
@@ -58,13 +56,21 @@ final class ContainerStore {
         defaults.set(usesDemo, forKey: Self.useDemoKey)
         transport.onEvent = nil
         self.usesDemo = usesDemo
-        transport = usesDemo ? DemoContainerTransport(defaults: defaults) : BLEContainerTransport()
+        transport = Self.makeTransport(demo: usesDemo, defaults: defaults)
         connection = .notPaired
+        clearDeviceInfo()
+        attachTransport()
+        transport.start()
+    }
+
+    private static func makeTransport(demo: Bool, defaults: UserDefaults) -> ContainerTransport {
+        demo ? DemoContainerTransport(defaults: defaults) : BLEContainerTransport()
+    }
+
+    private func clearDeviceInfo() {
         battery = nil
         firmware = nil
         lastReading = nil
-        attachTransport()
-        transport.start()
     }
 
     // MARK: Events
@@ -99,7 +105,7 @@ final class ContainerStore {
         let previous = SupplyLedger.status(for: entries)
         // Reconnects re-send the same reading; only log real changes.
         guard previous?.count != count else { return }
-        modelContext.insert(SupplyEvent(kind: .deviceReading, amount: count, source: .container))
+        modelContext.insert(SupplyEvent(kind: .deviceReading, amount: count))
         try? modelContext.save()
         LowSupplyReminder.supplyChanged(from: previous?.count, to: count, defaults: defaults)
     }
@@ -126,7 +132,7 @@ extension ContainerStore {
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let defaults = UserDefaults(suiteName: "preview.\(UUID().uuidString)")!
-        defaults.set(paired, forKey: "demoContainer.paired")
+        defaults.set(paired, forKey: DemoContainerTransport.pairedKey)
         let store = ContainerStore(modelContext: container.mainContext, defaults: defaults, forceDemo: true)
         store.start()
         return store

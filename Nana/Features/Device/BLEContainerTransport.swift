@@ -16,8 +16,6 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     private var commandCharacteristic: CBCharacteristic?
     private var pickerContinuation: CheckedContinuation<Bool, Error>?
 
-    var isPaired: Bool { accessory != nil }
-
     func start() {
         session.activate(on: .main) { [weak self] event in
             self?.handle(event)
