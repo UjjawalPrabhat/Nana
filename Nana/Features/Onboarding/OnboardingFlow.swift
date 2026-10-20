@@ -11,6 +11,7 @@ struct OnboardingFlow: View {
 
     enum Step: Hashable {
         case ageCheck(thenSetUp: Bool)
+        case pair
         case startingCount
         case underage
     }
@@ -26,9 +27,14 @@ struct OnboardingFlow: View {
                 case .ageCheck(let thenSetUp):
                     AgeCheckView {
                         isAdultConfirmed = true
-                        if thenSetUp { path.append(.startingCount) } else { onFinish() }
+                        if thenSetUp { path.append(.pair) } else { onFinish() }
                     } onUnderage: {
                         path.append(.underage)
+                    }
+                case .pair:
+                    // A paired container reports the count itself, so skip asking for it.
+                    PairContainerView { paired in
+                        if paired { onFinish() } else { path.append(.startingCount) }
                     }
                 case .startingCount:
                     StartingCountView(onDone: onFinish)
@@ -229,4 +235,5 @@ struct ContainerIllustration: View {
 #Preview {
     OnboardingFlow(onFinish: {})
         .modelContainer(for: SupplyEvent.self, inMemory: true)
+        .environment(ContainerStore.preview(paired: false))
 }

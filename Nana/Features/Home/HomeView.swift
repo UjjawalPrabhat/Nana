@@ -11,11 +11,13 @@ struct HomeView: View {
     private enum Sheet: Identifiable {
         case addRefill(current: Int)
         case adjust(current: Int?)
+        case pair
 
         var id: String {
             switch self {
             case .addRefill: "addRefill"
             case .adjust: "adjust"
+            case .pair: "pair"
             }
         }
     }
@@ -35,6 +37,8 @@ struct HomeView: View {
                         onAdjust: { sheet = .adjust(current: status?.count) }
                     )
 
+                    ContainerRow { sheet = .pair }
+
                     reminderRow
                 }
                 .padding(.horizontal, 16)
@@ -47,6 +51,7 @@ struct HomeView: View {
             switch sheet {
             case .addRefill(let current): AddRefillSheet(currentCount: current)
             case .adjust(let current): AdjustCountSheet(currentCount: current)
+            case .pair: PairContainerView { _ in self.sheet = nil }
             }
         }
     }
@@ -75,4 +80,5 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .modelContainer(for: SupplyEvent.self, inMemory: true)
+        .environment(ContainerStore.preview())
 }

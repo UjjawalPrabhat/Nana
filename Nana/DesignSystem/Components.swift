@@ -73,6 +73,7 @@ extension View {
     /// Secondary action next to a primary one.
     func nanaSecondaryButton() -> some View {
         self
+            .fontWeight(.semibold)
             .buttonStyle(.glass)
             .tint(.brandGreen)
             .controlSize(.large)

@@ -1,20 +1,43 @@
 import SwiftUI
 
-// Reminders, device and privacy controls arrive in milestones 5–6.
 struct SettingsView: View {
+    @AppStorage(AppSettings.lowSupplyReminderOn) private var reminderOn = false
     @AppStorage(AppSettings.lowSupplyThreshold) private var lowThreshold = AppSettings.defaultLowSupplyThreshold
+    @Environment(ContainerStore.self) private var containerStore
+    @State private var notificationsDenied = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    Toggle("Low-supply reminder", isOn: Binding(
+                        get: { reminderOn },
+                        set: { newValue in setReminder(newValue) }
+                    ))
                     Stepper(value: $lowThreshold, in: 0...SupplyLedger.capacity - 1) {
                         LabeledContent("Running low at", value: lowThreshold, format: .number)
                     }
+                    LabeledContent("Notification preview") {
+                        Text("Nana: Your reminder is ready.")
+                    }
                 } header: {
-                    Text("Supply")
+                    Text("Reminders")
                 } footer: {
-                    Text("Home shows \"Running low\" when your count reaches this number.")
+                    if notificationsDenied {
+                        Text("Notifications are turned off for Nana in iOS Settings.")
+                    } else {
+                        Text("Sent when your container's count reaches this number. The text never says what it's about.")
+                    }
+                }
+
+                Section("Device and data") {
+                    NavigationLink {
+                        DeviceDetailView()
+                    } label: {
+                        LabeledContent("Device management", value: containerStore.isPaired
+                            ? String(localized: "Connected")
+                            : String(localized: "None"))
+                    }
                 }
 
                 Section("About") {
@@ -26,6 +49,18 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
     }
+
+    private func setReminder(_ isOn: Bool) {
+        guard isOn else {
+            reminderOn = false
+            return
+        }
+        Task {
+            let granted = await LowSupplyReminder.requestAuthorization()
+            notificationsDenied = !granted
+            reminderOn = granted
+        }
+    }
 }
 
 extension Bundle {
@@ -34,4 +69,9 @@ extension Bundle {
         let build = infoDictionary?["CFBundleVersion"] as? String ?? "–"
         return "\(version) (\(build))"
     }
+}
+
+#Preview {
+    SettingsView()
+        .environment(ContainerStore.preview())
 }
