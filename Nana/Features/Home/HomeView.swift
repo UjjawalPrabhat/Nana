@@ -3,6 +3,10 @@ import SwiftUI
 
 struct HomeView: View {
     @Query(sort: \SupplyEvent.date) private var events: [SupplyEvent]
+    @Query private var completions: [LessonCompletion]
+    @Environment(NanaCompanion.self) private var companion
+    @State private var activeLesson: Curriculum.Lesson?
+    private let library = ContentLibrary.bundled
     @AppStorage(AppSettings.lowSupplyThreshold) private var lowThreshold = AppSettings.defaultLowSupplyThreshold
     @AppStorage(AppSettings.lowSupplyReminderOn) private var reminderOn = false
 
@@ -37,6 +41,11 @@ struct HomeView: View {
                         onAdjust: { sheet = .adjust(current: status?.count) }
                     )
 
+                    TodayLessonCard(
+                        lesson: library.todaysLesson(completed: Set(completions.map(\.lessonID))),
+                        library: library
+                    ) { activeLesson = $0 }
+
                     ContainerRow { sheet = .pair }
 
                     reminderRow
@@ -46,6 +55,16 @@ struct HomeView: View {
             }
             .nanaCanvas()
             .navigationTitle("Your supply")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let snapshot = companion.snapshot(library: library, completions: completions)
+                    NanaView(stage: snapshot.stage, mood: snapshot.mood, isCompact: true)
+                        .frame(width: 34, height: 34)
+                }
+            }
+        }
+        .fullScreenCover(item: $activeLesson) { lesson in
+            LessonPlayerView(lesson: lesson, library: library)
         }
         .sheet(item: $sheet) { sheet in
             switch sheet {
@@ -81,4 +100,5 @@ struct HomeView: View {
     HomeView()
         .modelContainer(for: SupplyEvent.self, inMemory: true)
         .environment(ContainerStore.preview())
+        .environment(NanaCompanion())
 }
