@@ -4,11 +4,13 @@ struct RootView: View {
     @AppStorage(AppSettings.hasOnboarded) private var hasOnboarded = false
 
     var body: some View {
-        if hasOnboarded {
-            MainTabView()
-        } else {
-            OnboardingFlow {
-                withAnimation { hasOnboarded = true }
+        PrivacyGate {
+            if hasOnboarded {
+                MainTabView()
+            } else {
+                OnboardingFlow {
+                    withAnimation { hasOnboarded = true }
+                }
             }
         }
     }

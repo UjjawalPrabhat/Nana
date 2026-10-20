@@ -38,9 +38,11 @@ struct SettingsView: View {
                             ? String(localized: "Connected")
                             : String(localized: "None"))
                     }
+                    NavigationLink("Privacy and data") { PrivacySettingsView() }
                 }
 
-                Section("About") {
+                Section("Support") {
+                    NavigationLink("Help and project information") { HelpView() }
                     LabeledContent("Version", value: Bundle.main.appVersion)
                 }
             }

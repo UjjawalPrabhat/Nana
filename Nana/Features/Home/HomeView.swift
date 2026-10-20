@@ -9,6 +9,7 @@ struct HomeView: View {
     private let library = ContentLibrary.bundled
     @AppStorage(AppSettings.lowSupplyThreshold) private var lowThreshold = AppSettings.defaultLowSupplyThreshold
     @AppStorage(AppSettings.lowSupplyReminderOn) private var reminderOn = false
+    @AppStorage(AppSettings.showNanaOnHome) private var showNana = true
 
     @State private var sheet: Sheet?
 
@@ -56,10 +57,12 @@ struct HomeView: View {
             .nanaCanvas()
             .navigationTitle("Your supply")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    let snapshot = companion.snapshot(library: library, completions: completions)
-                    NanaView(stage: snapshot.stage, mood: snapshot.mood, isCompact: true)
-                        .frame(width: 34, height: 34)
+                if showNana {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        let snapshot = companion.snapshot(library: library, completions: completions)
+                        NanaView(stage: snapshot.stage, mood: snapshot.mood, isCompact: true)
+                            .frame(width: 34, height: 34)
+                    }
                 }
             }
         }

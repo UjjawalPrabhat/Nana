@@ -7,6 +7,7 @@ nonisolated enum AppSettings {
     static let lowSupplyReminderOn = "lowSupplyReminderOn"
     static let lowSupplyThreshold = "lowSupplyThreshold"
     static let appLockOn = "appLockOn"
+    static let showNanaOnHome = "showNanaOnHome"
 
     static let defaultLowSupplyThreshold = 2
 }

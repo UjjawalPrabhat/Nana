@@ -10,6 +10,8 @@
 	<array>
 		<string>1153E3C4-0AF1-4576-94FB-86B822E893DD</string>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to unlock Nana.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Nana connects to your container to keep your count up to date.</string>
 	<key>UIBackgroundModes</key>
