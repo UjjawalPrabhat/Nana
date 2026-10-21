@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Nana app icon: bloom stage, happy mood, ported from NanaDrawing (120×120 design space).
+     Render: rsvg-convert -w 1024 -h 1024 -b '#F7E1D6' AppIcon.svg -o ../../Nana/Assets.xcassets/AppIcon.appiconset/AppIcon.png -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#FBEDE6"/>
+      <stop offset="1" stop-color="#F1C7B5"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <g transform="translate(512 520) scale(7.2) translate(-60 -56)" stroke-linecap="round">
+    <!-- ground shadow -->
+    <ellipse cx="60" cy="110" rx="32" ry="5" fill="#202B29" fill-opacity="0.1"/>
+
+    <!-- stem and leaves -->
+    <path d="M60 30 C60 22 63 16 69 12" fill="none" stroke="#24695B" stroke-width="3"/>
+    <path d="M69 12 C77 7 86 9 88 13 C84 20 75 22 69 18 Z" fill="#24695B"/>
+    <path d="M60 30 C58 24 54 20 48 19 C48 25 53 29 60 30 Z" fill="#24695B"/>
+
+    <!-- body -->
+    <path d="M60 30 C86 30 100 52 100 76 C100 96 84 106 60 106 C36 106 20 96 20 76 C20 52 34 30 60 30 Z"
+          fill="#BFE6D6" stroke="#24695B" stroke-width="3"/>
+
+    <!-- frangipani -->
+    <g fill="#FFFFFF" stroke="#DFAE98" stroke-width="1">
+      <circle cx="68" cy="6" r="5"/>
+      <circle cx="74" cy="11" r="5"/>
+      <circle cx="71" cy="18" r="5"/>
+      <circle cx="64" cy="17" r="5"/>
+      <circle cx="62" cy="10" r="5"/>
+    </g>
+    <circle cx="68" cy="12" r="3" fill="#F0CC84"/>
+
+    <!-- face (happy) -->
+    <ellipse cx="38" cy="80" rx="6" ry="4" fill="#F1C7B5"/>
+    <ellipse cx="82" cy="80" rx="6" ry="4" fill="#F1C7B5"/>
+    <circle cx="47" cy="68" r="5" fill="#202B29"/>
+    <circle cx="73" cy="68" r="5" fill="#202B29"/>
+    <path d="M53 82 Q60 89 67 82" fill="none" stroke="#202B29" stroke-width="3.5"/>
+  </g>
+</svg>
