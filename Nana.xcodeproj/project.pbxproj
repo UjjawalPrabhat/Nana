@@ -317,6 +317,7 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "Nana" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconPlanner AppIconPlain";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -325,6 +326,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Nana-Info.plist";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nana connects to your charm to keep your count up to date.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Nana notices when you leave a saved place without your charm. Your places stay on this phone.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nana uses your location to pin a place, like home, on this phone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -358,6 +363,7 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "Nana" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconPlanner AppIconPlain";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -366,6 +372,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Nana-Info.plist";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nana connects to your charm to keep your count up to date.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Nana notices when you leave a saved place without your charm. Your places stay on this phone.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nana uses your location to pin a place, like home, on this phone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
