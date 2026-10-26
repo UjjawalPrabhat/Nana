@@ -1,7 +1,7 @@
 // Pretends to be a Nana container over real Bluetooth, following Docs/BLE_SPEC.md.
 //
 // Run on a Mac:   swift Tools/NanaPeripheralSim/main.swift
-// Then type a number (0–12) and press Return to change the count,
+// Then type a number (0–3) and press Return to change the count,
 // "l <0-100>" to send a level-only reading, or "q" to quit.
 // The first run asks Terminal for Bluetooth permission.
 
@@ -12,7 +12,7 @@ let serviceUUID = CBUUID(string: "1153E3C4-0AF1-4576-94FB-86B822E893DD")
 let stockUUID = CBUUID(string: "ED573018-FB2B-4EEA-91C0-21E9287C1F6A")
 let capacityUUID = CBUUID(string: "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052")
 let commandUUID = CBUUID(string: "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E")
-let capacity: UInt8 = 12
+let capacity: UInt8 = 3
 
 final class Simulator: NSObject, CBPeripheralManagerDelegate {
     private var manager: CBPeripheralManager!
@@ -98,7 +98,7 @@ FileHandle.standardInput.readabilityHandler = { handle in
         } else if let count = UInt8(line) {
             simulator.setCount(count)
         } else {
-            print("Type 0–12, \"l 0-100\", or q.")
+            print("Type 0–3, \"l 0-100\", or q.")
         }
     }
 }

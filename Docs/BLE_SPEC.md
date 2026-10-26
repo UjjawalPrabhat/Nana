@@ -33,7 +33,7 @@ The recessed **pairing button** on the base restarts fast advertising for 30 s.
 | Characteristic | UUID | Properties | Format |
 |---|---|---|---|
 | Stock | `ED573018-FB2B-4EEA-91C0-21E9287C1F6A` | Read, Notify | 4 bytes, see 3.2 |
-| Capacity | `23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052` | Read | `u8`: max items the container holds (currently 12) |
+| Capacity | `23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052` | Read | `u8`: max items the container holds (3 on the charm) |
 | Command | `5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E` | Write (with response) | `u8` opcode, see 3.3 |
 
 ### 3.2 Stock packet (4 bytes, little-endian where it matters)
@@ -83,8 +83,9 @@ Unknown opcodes → respond with ATT error `0x80` (application error).
 ## 5. Behaviour the app relies on
 
 1. The container accepts reconnection from a bonded iPhone at any time. The app reconnects in the background (CoreBluetooth state restoration) to receive Stock notifications.
-2. One connection at a time is fine.
-3. After power loss, the last calibration values persist (NVS/flash).
+2. **The app treats a dropped connection as "out of range".** After the wait the user picks (1, 2 or 5 minutes), and only outside their saved places, it sends the left-behind nudge. So the firmware must never drop an idle connection on its own (no idle timeout, no sleep that ends the link) and should keep advertising while disconnected so the phone reconnects as soon as it is back in range.
+3. One connection at a time is fine.
+4. After power loss, the last calibration values persist (NVS/flash).
 
 ## 6. Reference firmware outline (ESP32-C3 + NimBLE-Arduino)
 
@@ -110,7 +111,7 @@ void setup() {
   auto server  = NimBLEDevice::createServer();
   auto service = server->createService(NANA_SERVICE);
   stock = service->createCharacteristic(STOCK_CHAR, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-  uint8_t capacity = 12;
+  uint8_t capacity = 3;
   service->createCharacteristic(CAPACITY_CHAR, NIMBLE_PROPERTY::READ)->setValue(&capacity, 1);
   service->createCharacteristic(COMMAND_CHAR, NIMBLE_PROPERTY::WRITE); // + callbacks for 0x01–0x03
   service->start();
@@ -127,7 +128,7 @@ void loop() {
 
 ## 7. Testing without hardware
 
-- **iOS Simulator:** the app's demo container (Settings → Device management → Use demo container, Debug builds) implements this contract in memory.
+- **iOS Simulator:** the app's demo charm (Settings → Demo charm, Debug builds) implements this contract in memory.
 - **Real iPhone, no hardware:** run `swift Tools/NanaPeripheralSim/main.swift` on a Mac. The Mac advertises as a Nana container, and you type a number to change the count.
 - **Generic tools:** nRF Connect or LightBlue can read and write the characteristics above.
 
