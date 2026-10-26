@@ -63,6 +63,8 @@ nonisolated enum ContainerConnection: Equatable, Sendable {
     case connecting
     case connected
     case disconnected
+    /// Bluetooth is off or not allowed. Left-behind nudges pause.
+    case unavailable
 }
 
 nonisolated enum ContainerEvent: Sendable {
@@ -81,5 +83,7 @@ protocol ContainerTransport: AnyObject {
     /// Shows the system pairing UI. Returns `true` if a container was added.
     func pair() async throws -> Bool
     func forget() async throws
+    /// Tries the connection again, e.g. after the user taps Reconnect.
+    func reconnect()
     func send(_ command: ContainerCommand)
 }

@@ -18,7 +18,7 @@ final class DemoContainerTransport: ContainerTransport {
     private var isPaired: Bool { defaults.bool(forKey: Self.pairedKey) }
 
     private var count: Int {
-        get { defaults.object(forKey: Self.countKey) as? Int ?? 6 }
+        get { defaults.object(forKey: Self.countKey) as? Int ?? 2 }
         set { defaults.set(min(max(newValue, 0), capacity), forKey: Self.countKey) }
     }
 
@@ -42,12 +42,23 @@ final class DemoContainerTransport: ContainerTransport {
         onEvent?(.connection(.notPaired))
     }
 
+    func reconnect() {
+        guard isPaired else { return }
+        connect()
+    }
+
     func send(_ command: ContainerCommand) {}
 
     /// Simulates the user taking items out or refilling, then closing the lid.
     func simulateChange(by delta: Int) {
         count += delta
         publishStock()
+    }
+
+    /// Simulates walking away from the charm, or coming back to it.
+    func simulateInRange(_ inRange: Bool) {
+        guard isPaired else { return }
+        if inRange { connect() } else { onEvent?(.connection(.disconnected)) }
     }
 
     private func connect() {

@@ -26,14 +26,15 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         let descriptor = ASDiscoveryDescriptor()
         descriptor.bluetoothServiceUUID = CBUUID(string: NanaGATT.service)
         let item = ASPickerDisplayItem(
-            name: String(localized: "Nana container"),
+            name: String(localized: "Nana charm"),
             productImage: Self.productImage,
             descriptor: descriptor
         )
         return try await withCheckedThrowingContinuation { continuation in
             pickerContinuation = continuation
             session.showPicker(for: [item]) { [weak self] error in
-                if let error {
+                guard let error else { return }
+                Task { @MainActor in
                     self?.pickerContinuation?.resume(throwing: error)
                     self?.pickerContinuation = nil
                 }
@@ -45,6 +46,14 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         guard let accessory else { return }
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         try await session.removeAccessory(accessory)
+    }
+
+    func reconnect() {
+        guard let central else { return }
+        if let peripheral, peripheral.state != .disconnected {
+            central.cancelPeripheralConnection(peripheral)
+        }
+        connectIfPossible(central)
     }
 
     func send(_ command: ContainerCommand) {
@@ -106,7 +115,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     }
 
     private static var productImage: UIImage {
-        let renderer = ImageRenderer(content: ContainerIllustration().frame(width: 240, height: 180))
+        let renderer = ImageRenderer(content: CharmView(count: SupplyLedger.capacity, scale: 0.75))
         renderer.scale = 3
         return renderer.uiImage ?? UIImage()
     }
@@ -117,7 +126,7 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
         if central.state == .poweredOn {
             connectIfPossible(central)
         } else {
-            onEvent?(.connection(.disconnected))
+            onEvent?(.connection(.unavailable))
         }
     }
 
