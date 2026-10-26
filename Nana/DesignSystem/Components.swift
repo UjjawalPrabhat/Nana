@@ -4,18 +4,15 @@ import SwiftUI
 
 /// Full-width Cobalt button with the hard Night Ink drop: the main action on a screen.
 struct NanaPrimaryButtonStyle: ButtonStyle {
-    var fill: Color = .cobalt
-    var foreground: Color = .butter
-
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
         configuration.label
             .font(.nanaButton)
-            .foregroundStyle(foreground)
+            .foregroundStyle(.butter)
             .frame(maxWidth: .infinity, minHeight: 58)
-            .background(fill, in: .rect(cornerRadius: 20))
+            .background(.cobalt, in: .rect(cornerRadius: 20))
             .offset(y: pressed ? 4 : 0)
             .background {
                 RoundedRectangle(cornerRadius: 20)
@@ -45,18 +42,11 @@ struct NanaSecondaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Small outlined pill, e.g. "Allow notifications" or "Done".
+/// Small outlined pill button, e.g. "Allow notifications".
 struct NanaPillButtonStyle: ButtonStyle {
-    var isOn = false
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.nanaLabel)
-            .foregroundStyle(isOn ? Color.butter : .nightInk)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 46)
-            .background(isOn ? Color.cobalt : .card, in: .rect(cornerRadius: 16))
-            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+            .nanaPill()
             .opacity(configuration.isPressed ? 0.7 : 1)
             .contentShape(.rect)
     }
@@ -103,6 +93,17 @@ extension View {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(.nightInk, lineWidth: 3)
             }
+    }
+
+    /// The pill shape shared by pill buttons and status labels like "Allowed".
+    func nanaPill(_ fill: Color = .card, foreground: Color = .nightInk) -> some View {
+        self
+            .font(.nanaLabel)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 46)
+            .background(fill, in: .rect(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
     }
 
     /// Butter ground for a whole screen.

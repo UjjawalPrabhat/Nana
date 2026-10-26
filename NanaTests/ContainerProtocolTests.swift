@@ -7,14 +7,12 @@ struct ContainerProtocolTests {
         let reading = StockPacket.parse(Data([0x01, 0x01, 0x06, 0xFF]))
         #expect(reading == StockReading(count: 6, levelPercent: nil))
         #expect(reading?.estimatedCount(capacity: 12) == 6)
-        #expect(reading?.isEstimate == false)
     }
 
     @Test func levelOnlyBecomesEstimate() {
         let reading = StockPacket.parse(Data([0x01, 0x02, 0xFF, 50]))
         #expect(reading?.count == nil)
         #expect(reading?.estimatedCount(capacity: 12) == 6)
-        #expect(reading?.isEstimate == true)
     }
 
     @Test func lidOpenFlagIsDecodedAndUnknownFlagsIgnored() {

@@ -48,7 +48,6 @@ struct StayedBehindView: View {
                     .font(.nanaLabel)
                     .nanaCard(.banana, cornerRadius: 20, padding: 14)
                     .padding(.bottom, 12)
-                    .accessibilityAddTraits(.isStaticText)
             }
 
             VStack(spacing: 12) {

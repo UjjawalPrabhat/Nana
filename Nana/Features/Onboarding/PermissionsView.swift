@@ -49,12 +49,7 @@ struct PermissionsView: View {
             cardTitle("Bluetooth", systemImage: "dot.radiowaves.left.and.right", tile: .banana, color: .butter)
             Text("Reads the count and knows when your charm is out of range.")
             Text(containerStore.isPaired ? "Allowed" : "Pair your charm later in Settings")
-                .font(.nanaLabel)
-                .padding(.horizontal, 18)
-                .frame(minHeight: 46)
-                .background(Color.butter, in: .rect(cornerRadius: 16))
-                .foregroundStyle(.nightInk)
-                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+                .nanaPill(.butter)
         }
         .foregroundStyle(.butter)
         .nanaCard(.cobalt, cornerRadius: 26, padding: 20)
@@ -75,12 +70,7 @@ struct PermissionsView: View {
                 .buttonStyle(NanaPillButtonStyle())
             case .allowed:
                 Label("Allowed", systemImage: "checkmark")
-                    .font(.nanaLabel)
-                    .foregroundStyle(.butter)
-                    .padding(.horizontal, 18)
-                    .frame(minHeight: 46)
-                    .background(Color.cobalt, in: .rect(cornerRadius: 16))
-                    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+                    .nanaPill(.cobalt, foreground: .butter)
             case .denied:
                 Button("Turn on in iOS Settings") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
@@ -95,7 +85,7 @@ struct PermissionsView: View {
         HStack(spacing: 12) {
             IconTile(systemImage: systemImage, fill: tile)
             Text(title)
-                .font(.custom("BricolageGrotesque-ExtraBold", size: 26, relativeTo: .title2))
+                .font(.nana(.extraBold, size: 26, relativeTo: .title2))
                 .foregroundStyle(color)
                 .accessibilityAddTraits(.isHeader)
         }

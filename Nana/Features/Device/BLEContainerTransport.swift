@@ -13,7 +13,6 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     private var accessory: ASAccessory?
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
-    private var commandCharacteristic: CBCharacteristic?
     private var pickerContinuation: CheckedContinuation<Bool, Error>?
 
     func start() {
@@ -56,11 +55,6 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         connectIfPossible(central)
     }
 
-    func send(_ command: ContainerCommand) {
-        guard let peripheral, let commandCharacteristic else { return }
-        peripheral.writeValue(Data([command.rawValue]), for: commandCharacteristic, type: .withResponse)
-    }
-
     // MARK: AccessorySetupKit
 
     private func handle(_ event: ASAccessoryEvent) {
@@ -76,7 +70,6 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         case .accessoryRemoved:
             accessory = nil
             peripheral = nil
-            commandCharacteristic = nil
             onEvent?(.connection(.notPaired))
         case .pickerDidDismiss:
             // Fires after `.accessoryAdded` on success, so this only resolves a cancel.
@@ -142,12 +135,10 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
         peripheral.discoverServices([
             CBUUID(string: NanaGATT.service),
             CBUUID(string: NanaGATT.batteryService),
-            CBUUID(string: NanaGATT.deviceInfoService),
         ])
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        commandCharacteristic = nil
         onEvent?(.connection(.disconnected))
         if accessory != nil { central.connect(peripheral) }
     }
@@ -171,10 +162,8 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
             case CBUUID(string: NanaGATT.stock), CBUUID(string: NanaGATT.batteryLevel):
                 peripheral.setNotifyValue(true, for: characteristic)
                 peripheral.readValue(for: characteristic)
-            case CBUUID(string: NanaGATT.capacity), CBUUID(string: NanaGATT.firmwareRevision):
+            case CBUUID(string: NanaGATT.capacity):
                 peripheral.readValue(for: characteristic)
-            case CBUUID(string: NanaGATT.command):
-                commandCharacteristic = characteristic
             default:
                 break
             }
@@ -190,8 +179,6 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
             if let capacity = value.first, capacity > 0 { onEvent?(.capacity(Int(capacity))) }
         case CBUUID(string: NanaGATT.batteryLevel):
             if let level = value.first { onEvent?(.battery(Int(min(level, 100)))) }
-        case CBUUID(string: NanaGATT.firmwareRevision):
-            onEvent?(.firmware(String(decoding: value, as: UTF8.self)))
         default:
             break
         }

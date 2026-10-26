@@ -24,7 +24,6 @@ struct HomeTiles: View {
 }
 
 private struct LeftBehindTile: View {
-    @AppStorage(AppSettings.leftBehindNudgeOn) private var isOn = true
     @Environment(LeftBehindNudge.self) private var leftBehind
 
     var body: some View {
@@ -34,21 +33,16 @@ private struct LeftBehindTile: View {
                     .font(.nanaCardTitle)
                     .foregroundStyle(.cobalt)
                 Text("When you leave it behind, outside your places")
-                    .font(.custom("AtkinsonHyperlegibleNext-Regular", size: 13, relativeTo: .caption))
+                    .font(.nana(.text, size: 13, relativeTo: .caption))
                     .foregroundStyle(.inkSoft)
             }
             Spacer(minLength: 0)
-            Toggle(isOn: $isOn) {}
-                .toggleStyle(NanaToggleStyle())
+            NudgeToggle(AppSettings.leftBehindNudgeOn, onChange: leftBehind.reschedule) {}
                 .accessibilityLabel("Left-behind nudge")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(minHeight: 118)
         .nanaCard()
-        .onChange(of: isOn) { _, isOn in
-            leftBehind.reschedule()
-            if isOn { Task { _ = await NotificationScheduler.requestAuthorization() } }
-        }
     }
 }
 
@@ -60,7 +54,7 @@ private struct GuideTile: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("How to put one on").font(.nanaCardTitle)
                 Text("The fruit stand")
-                    .font(.custom("AtkinsonHyperlegibleNext-Regular", size: 13, relativeTo: .caption))
+                    .font(.nana(.text, size: 13, relativeTo: .caption))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(.nightInk)

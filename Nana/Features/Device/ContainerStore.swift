@@ -8,10 +8,7 @@ import SwiftData
 final class ContainerStore {
     private(set) var connection: ContainerConnection = .notPaired
     private(set) var battery: Int?
-    private(set) var firmware: String?
     private(set) var capacity = SupplyLedger.capacity
-    private(set) var lastReading: StockReading?
-    private(set) var lastSeen: Date?
     /// When the charm went out of range. `nil` while connected, and while
     /// Bluetooth is off so nudges pause.
     private(set) var disconnectedSince: Date? {
@@ -34,7 +31,6 @@ final class ContainerStore {
     @ObservationIgnored private let nudges: NudgeScheduling
 
     private static let useDemoKey = "useDemoContainer"
-    private static let lastSeenKey = "container.lastSeen"
     private static let disconnectedSinceKey = "container.disconnectedSince"
 
     init(
@@ -49,7 +45,6 @@ final class ContainerStore {
         let usesDemo = forceDemo ?? (defaults.object(forKey: Self.useDemoKey) as? Bool ?? Self.isSimulator)
         self.usesDemo = usesDemo
         self.transport = Self.makeTransport(demo: usesDemo, defaults: defaults)
-        self.lastSeen = defaults.object(forKey: Self.lastSeenKey) as? Date
         self.disconnectedSince = defaults.object(forKey: Self.disconnectedSinceKey) as? Date
         attachTransport()
     }
@@ -72,10 +67,6 @@ final class ContainerStore {
         transport.reconnect()
     }
 
-    func identify() {
-        transport.send(.identify)
-    }
-
     func setUsesDemo(_ usesDemo: Bool) {
         guard usesDemo != self.usesDemo else { return }
         defaults.set(usesDemo, forKey: Self.useDemoKey)
@@ -94,8 +85,6 @@ final class ContainerStore {
 
     private func clearDeviceInfo() {
         battery = nil
-        firmware = nil
-        lastReading = nil
         disconnectedSince = nil
     }
 
@@ -113,7 +102,6 @@ final class ContainerStore {
             connection = state
             switch state {
             case .connected:
-                markSeen()
                 disconnectedSince = nil
             case .disconnected:
                 if disconnectedSince == nil { disconnectedSince = .now }
@@ -123,15 +111,11 @@ final class ContainerStore {
                 break
             }
         case .stock(let reading):
-            markSeen()
-            lastReading = reading
             record(reading)
         case .capacity(let value):
             capacity = value
         case .battery(let value):
             battery = value
-        case .firmware(let value):
-            firmware = value
         }
     }
 
@@ -147,11 +131,6 @@ final class ContainerStore {
            LowSupplyReminder.shouldNotify(previous: previous?.count, current: count) {
             nudges.schedule(.lowSupply, at: .now)
         }
-    }
-
-    private func markSeen() {
-        lastSeen = .now
-        defaults.set(lastSeen, forKey: Self.lastSeenKey)
     }
 
     private static var isSimulator: Bool {

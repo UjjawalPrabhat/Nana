@@ -1,14 +1,13 @@
 import CoreLocation
 import Foundation
 
-/// Watches the saved places with `CLMonitor` and says whether you're inside one.
+/// Watches the saved places with `CLMonitor` and reports whether you're inside one.
 /// iOS relaunches the app on a place event, so `start()` runs at every launch.
 @Observable
 final class PlaceMonitor: NSObject {
-    private(set) var isInsidePlace = false
     private(set) var authorization: CLAuthorizationStatus
 
-    /// Called whenever `isInsidePlace` changes.
+    /// Called with `true` on entering the first place, `false` on leaving the last.
     @ObservationIgnored var onChange: ((Bool) -> Void)?
 
     @ObservationIgnored private let manager = CLLocationManager()
@@ -17,9 +16,7 @@ final class PlaceMonitor: NSObject {
     @ObservationIgnored private var session: CLServiceSession?
     @ObservationIgnored private var insideIDs: Set<String> = [] {
         didSet {
-            guard isInsidePlace != !insideIDs.isEmpty else { return }
-            isInsidePlace = !insideIDs.isEmpty
-            onChange?(isInsidePlace)
+            if insideIDs.isEmpty != oldValue.isEmpty { onChange?(!insideIDs.isEmpty) }
         }
     }
 
@@ -31,8 +28,6 @@ final class PlaceMonitor: NSObject {
         super.init()
         manager.delegate = self
     }
-
-    var hasAlwaysAccess: Bool { authorization == .authorizedAlways }
 
     func start() async {
         _ = await monitor()

@@ -40,7 +40,7 @@ struct GuideView: View {
                 .frame(minHeight: 44)
             Spacer()
             Text("The fruit stand")
-                .font(.custom("BricolageGrotesqueCondensed-ExtraBold", size: 26, relativeTo: .title2))
+                .font(.nana(.condensedExtraBold, size: 26, relativeTo: .title2))
                 .foregroundStyle(.cobalt)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
@@ -102,10 +102,9 @@ private struct ModelPicker: View {
     var body: some View {
         HStack(spacing: 0) {
             option(.banana, title: "Uncut", subtitle: "Banana model", image: .fruitBanana, angle: -10)
-            Rectangle()
-                .fill(.clear)
+            Line()
+                .stroke(.nightInk, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                 .frame(width: 1.5)
-                .overlay { Line().stroke(.nightInk, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])) }
             option(.eggplant, title: "Cut", subtitle: "Eggplant model", image: .fruitEggplant, angle: 8)
         }
         .frame(minHeight: 126)
@@ -134,10 +133,10 @@ private struct ModelPicker: View {
                     .offset(y: isSelected ? -4 : 4)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.custom("BricolageGrotesque-ExtraBold", size: 22, relativeTo: .title3))
+                    Text(title).font(.nana(.extraBold, size: 22, relativeTo: .title3))
                     Text(subtitle).font(.nanaCaption)
                     Text(isSelected ? "Showing" : "Tap to switch")
-                        .font(.custom("AtkinsonHyperlegibleNext-Bold", size: 12, relativeTo: .caption2))
+                        .font(.nana(.textBold, size: 12, relativeTo: .caption2))
                         .foregroundStyle(.cobalt)
                         .padding(.top, 4)
                         .accessibilityHidden(true)
@@ -186,8 +185,8 @@ private struct StepCard: View {
                 .background(Color.slotCream)
             perforation
             HStack(alignment: .top, spacing: 14) {
-                Text(number < 10 ? "0\(number)" : "\(number)")
-                    .font(.custom("BricolageGrotesqueCondensed-ExtraBold", size: 64, relativeTo: .largeTitle))
+                Text(number, format: .number.precision(.integerLength(2)))
+                    .font(.nana(.condensedExtraBold, size: 64, relativeTo: .largeTitle))
                     .foregroundStyle(.cobalt)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 6) {
@@ -213,7 +212,7 @@ private struct StepCard: View {
             Image(step.image(for: model))
             ForEach(Array(step.labels.enumerated()), id: \.offset) { _, label in
                 Text(label.text)
-                    .font(.custom("AtkinsonHyperlegibleNext-Bold", size: 12.5, relativeTo: .caption))
+                    .font(.nana(.textBold, size: 12.5, relativeTo: .caption))
                     .fixedSize()
                     .rotationEffect(.degrees(label.angle))
                     .position(x: label.x, y: label.y)
@@ -263,7 +262,7 @@ private struct DoneCard: View {
                 .padding(.bottom, 22)
                 .accessibilityHidden(true)
             Text("Ready.")
-                .font(.custom("BricolageGrotesqueCondensed-ExtraBold", size: 88, relativeTo: .largeTitle))
+                .font(.nana(.condensedExtraBold, size: 88, relativeTo: .largeTitle))
                 .lineHeight(.multiple(factor: 0.86))
                 .accessibilityAddTraits(.isHeader)
             Text("The fruit stand stays open. Come back any time.")

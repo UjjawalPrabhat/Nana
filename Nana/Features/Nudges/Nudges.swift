@@ -3,7 +3,7 @@ import UserNotifications
 
 /// Every notification Nana can send. Each kind has a fixed identifier, so a new
 /// schedule replaces the old one instead of stacking.
-nonisolated enum Nudge: String, CaseIterable, Sendable {
+nonisolated enum Nudge: String, Sendable {
     case leftBehind = "nana.leftBehind"
     case lowSupply = "nana.lowSupply"
 }

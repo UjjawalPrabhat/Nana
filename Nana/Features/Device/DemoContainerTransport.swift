@@ -47,8 +47,6 @@ final class DemoContainerTransport: ContainerTransport {
         connect()
     }
 
-    func send(_ command: ContainerCommand) {}
-
     /// Simulates the user taking items out or refilling, then closing the lid.
     func simulateChange(by delta: Int) {
         count += delta
@@ -69,7 +67,6 @@ final class DemoContainerTransport: ContainerTransport {
             self.onEvent?(.connection(.connected))
             self.onEvent?(.capacity(self.capacity))
             self.onEvent?(.battery(82))
-            self.onEvent?(.firmware("demo"))
             self.publishStock()
         }
     }

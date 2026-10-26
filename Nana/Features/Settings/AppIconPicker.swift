@@ -83,7 +83,7 @@ private struct IconPreview: View {
             case .charm:
                 Color.cobalt
                 Text(verbatim: "n")
-                    .font(.custom("BricolageGrotesqueCondensed-ExtraBold", size: 44, relativeTo: .title))
+                    .font(.nana(.condensedExtraBold, size: 44, relativeTo: .title))
                     .foregroundStyle(.butter)
                     .dynamicTypeSize(.large)
             case .planner:

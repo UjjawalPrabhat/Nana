@@ -80,7 +80,7 @@ struct PairStepView: View {
                 .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.nightInk, lineWidth: 2.5) }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(phase.title).font(.custom("AtkinsonHyperlegibleNext-Bold", size: 17, relativeTo: .body))
+                Text(phase.title).font(.nana(.textBold, size: 17))
                 Text(phase.detail).font(.nanaCallout).foregroundStyle(.inkSoft)
             }
             Spacer(minLength: 0)
@@ -88,7 +88,6 @@ struct PairStepView: View {
         .frame(minHeight: 46)
         .nanaCard(cornerRadius: 22, padding: 14)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private var symbol: String {

@@ -116,8 +116,6 @@ private struct CharmSection: View {
 // MARK: Nudges
 
 private struct NudgesSection: View {
-    @AppStorage(AppSettings.leftBehindNudgeOn) private var leftBehindOn = true
-    @AppStorage(AppSettings.lowSupplyNudgeOn) private var lowSupplyOn = true
     @AppStorage(AppSettings.leftBehindWaitMinutes) private var waitMinutes = 2
     @Query(sort: \Place.createdAt) private var places: [Place]
     @Environment(LeftBehindNudge.self) private var leftBehind
@@ -127,10 +125,9 @@ private struct NudgesSection: View {
     var body: some View {
         SettingsSection(title: "Nudges") {
             RowGroup {
-                Toggle(isOn: $leftBehindOn) {
+                NudgeToggle(AppSettings.leftBehindNudgeOn, onChange: leftBehind.reschedule) {
                     RowLabel("Left behind", detail: Text("When your charm stays behind outside your places"))
                 }
-                .toggleStyle(NanaToggleStyle())
 
                 ForEach(places) { place in
                     NavigationLink {
@@ -171,10 +168,9 @@ private struct NudgesSection: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens iOS Settings")
 
-                Toggle(isOn: $lowSupplyOn) {
+                NudgeToggle(AppSettings.lowSupplyNudgeOn) {
                     RowLabel("Running low", detail: Text("When one is left"))
                 }
-                .toggleStyle(NanaToggleStyle())
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -189,13 +185,6 @@ private struct NudgesSection: View {
                 .font(.nanaFootnote)
                 .foregroundStyle(.inkSoft)
                 .padding(.horizontal, 4)
-        }
-        .onChange(of: leftBehindOn) { _, isOn in
-            leftBehind.reschedule()
-            if isOn { Task { _ = await NotificationScheduler.requestAuthorization() } }
-        }
-        .onChange(of: lowSupplyOn) { _, isOn in
-            if isOn { Task { _ = await NotificationScheduler.requestAuthorization() } }
         }
         .onChange(of: waitMinutes) { leftBehind.reschedule() }
     }

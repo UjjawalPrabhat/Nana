@@ -5,7 +5,6 @@ import SwiftUI
 struct CharmView: View {
     /// `nil` when the count isn't known; the slots are striped.
     var count: Int?
-    var capacity = SupplyLedger.capacity
     /// Out of range: drawn at half strength.
     var isDimmed = false
     var scale: CGFloat = 1
@@ -48,7 +47,7 @@ struct CharmView: View {
             }
             .overlay {
                 HStack(spacing: 14) {
-                    ForEach(0..<capacity, id: \.self) { index in
+                    ForEach(0..<SupplyLedger.capacity, id: \.self) { index in
                         CharmSlot(state: slotState(at: index))
                     }
                 }
@@ -63,7 +62,7 @@ struct CharmView: View {
 
     private var accessibilityText: Text {
         guard let count else { return Text("Nana charm, count not updated") }
-        return Text("Nana charm holding \(count) of \(capacity)")
+        return Text("Nana charm holding \(count) of \(SupplyLedger.capacity)")
     }
 }
 
@@ -130,11 +129,10 @@ private nonisolated struct Stripes: Shape {
 /// The charm in miniature, for list rows.
 struct CharmBadge: View {
     var count: Int?
-    var capacity = SupplyLedger.capacity
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(0..<capacity, id: \.self) { index in
+            ForEach(0..<SupplyLedger.capacity, id: \.self) { index in
                 let filled = count.map { index < $0 } ?? false
                 RoundedRectangle(cornerRadius: 3)
                     .fill(filled ? Color.banana : .clear)
@@ -155,15 +153,13 @@ struct CharmBadge: View {
 
 /// The "n" tile from the app icon and the lock-screen preview.
 struct AppMark: View {
-    var size: CGFloat = 36
-
     var body: some View {
         Text(verbatim: "n")
-            .font(.custom("BricolageGrotesque-ExtraBold", size: size / 2, relativeTo: .body))
+            .font(.nana(.extraBold, size: 18))
             .foregroundStyle(.cobalt)
-            .frame(width: size, height: size)
-            .background(Color.butter, in: .rect(cornerRadius: size * 0.28))
-            .overlay { RoundedRectangle(cornerRadius: size * 0.28).strokeBorder(.nightInk, lineWidth: 2) }
+            .frame(width: 36, height: 36)
+            .background(Color.butter, in: .rect(cornerRadius: 10))
+            .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.nightInk, lineWidth: 2) }
             .accessibilityHidden(true)
     }
 }

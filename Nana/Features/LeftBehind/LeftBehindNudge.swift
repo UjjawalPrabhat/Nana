@@ -5,7 +5,7 @@ import Foundation
 @Observable
 final class LeftBehindNudge {
     private(set) var disconnectedSince: Date?
-    private(set) var isInsidePlace = false
+    private var isInsidePlace = false
     private(set) var snoozedUntil: Date?
     private(set) var isDismissed: Bool
 
@@ -25,7 +25,7 @@ final class LeftBehindNudge {
         isDismissed = defaults.bool(forKey: Self.dismissedKey)
     }
 
-    var input: LeftBehindRules.Input {
+    private var input: LeftBehindRules.Input {
         LeftBehindRules.Input(
             disconnectedSince: disconnectedSince,
             isInsidePlace: isInsidePlace,

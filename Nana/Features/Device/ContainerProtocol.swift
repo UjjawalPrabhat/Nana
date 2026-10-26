@@ -5,17 +5,9 @@ nonisolated enum NanaGATT {
     static let service = "1153E3C4-0AF1-4576-94FB-86B822E893DD"
     static let stock = "ED573018-FB2B-4EEA-91C0-21E9287C1F6A"
     static let capacity = "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052"
-    static let command = "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E"
 
     static let batteryService = "180F"
     static let batteryLevel = "2A19"
-    static let deviceInfoService = "180A"
-    static let firmwareRevision = "2A26"
-}
-
-/// The app only sends `identify` so far; calibration (0x02, 0x03) is firmware-side.
-nonisolated enum ContainerCommand: UInt8, Sendable {
-    case identify = 0x01
 }
 
 nonisolated struct StockReading: Equatable, Sendable {
@@ -29,8 +21,6 @@ nonisolated struct StockReading: Equatable, Sendable {
         guard let levelPercent else { return nil }
         return Int((Double(levelPercent) / 100 * Double(capacity)).rounded())
     }
-
-    var isEstimate: Bool { count == nil && levelPercent != nil }
 }
 
 nonisolated enum StockPacket {
@@ -72,7 +62,6 @@ nonisolated enum ContainerEvent: Sendable {
     case stock(StockReading)
     case capacity(Int)
     case battery(Int)
-    case firmware(String)
 }
 
 /// A way of talking to the container: real Bluetooth or the in-memory demo.
@@ -85,5 +74,4 @@ protocol ContainerTransport: AnyObject {
     func forget() async throws
     /// Tries the connection again, e.g. after the user taps Reconnect.
     func reconnect()
-    func send(_ command: ContainerCommand)
 }

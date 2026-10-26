@@ -75,7 +75,7 @@ struct WelcomeView: View {
                 .foregroundStyle(.cobalt)
                 .accessibilityAddTraits(.isHeader)
             Text("Nana counts what is in your charm and gives you a quiet nudge before you run out.")
-                .font(.custom("AtkinsonHyperlegibleNext-Regular", size: 18, relativeTo: .body))
+                .font(.nana(.text, size: 18))
                 .padding(.top, 24)
                 .padding(.bottom, 26)
 

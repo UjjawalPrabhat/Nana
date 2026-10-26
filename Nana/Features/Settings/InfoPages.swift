@@ -27,7 +27,7 @@ private struct InfoPage<Content: View>: View {
                     .accessibilityAddTraits(.isHeader)
                     .padding(.bottom, 8)
                 Text(intro)
-                    .font(.custom("AtkinsonHyperlegibleNext-Regular", size: 16, relativeTo: .body))
+                    .font(.nana(.text, size: 16))
                     .padding(.bottom, 6)
                 content
             }
@@ -153,7 +153,7 @@ struct HealthSafetyView: View {
             Link(destination: URL(string: "tel:112")!) {
                 HStack(spacing: 14) {
                     Text(verbatim: "112")
-                        .font(.custom("BricolageGrotesqueCondensed-ExtraBold", size: 44, relativeTo: .largeTitle))
+                        .font(.nana(.condensedExtraBold, size: 44, relativeTo: .largeTitle))
                     Text("\(Text("Emergency in Indonesia.").bold()) Call for urgent medical help.")
                         .font(.nanaCallout)
                         .multilineTextAlignment(.leading)

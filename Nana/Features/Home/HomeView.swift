@@ -133,7 +133,6 @@ struct HomeContent: View {
         }
         .nanaCard(.tangerine, cornerRadius: 20, padding: 12)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private var count: some View {
