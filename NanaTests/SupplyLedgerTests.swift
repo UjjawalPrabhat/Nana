@@ -9,48 +9,30 @@ struct SupplyLedgerTests {
         .init(date: start.addingTimeInterval(minutes * 60), kind: kind, amount: amount)
     }
 
-    @Test func noEventsMeansNotSet() {
+    @Test func noEventsMeansNoStatus() {
         #expect(SupplyLedger.status(for: []) == nil)
-        #expect(SupplyLedger.level(of: nil, lowThreshold: 2) == .notSet)
     }
 
-    @Test func refillsAddOnTopOfAdjustments() {
-        let status = SupplyLedger.status(for: [entry(0, .adjust, 2), entry(1, .refill, 3)])
-        #expect(status?.count == 5)
+    @Test func latestEntryWinsAndCarriesSource() {
+        let status = SupplyLedger.status(for: [entry(0, .deviceReading, 3), entry(1, .adjust, 1)])
+        #expect(status?.count == 1)
         #expect(status?.source == .user)
     }
 
-    @Test func refillFromNothingStartsAtZero() {
-        #expect(SupplyLedger.status(for: [entry(0, .refill, 4)])?.count == 4)
-    }
-
-    @Test func eventsAreReplayedInDateOrderNotInsertionOrder() {
-        let status = SupplyLedger.status(for: [entry(5, .refill, 1), entry(0, .adjust, 6)])
-        #expect(status?.count == 7)
+    @Test func eventsAreOrderedByDateNotInsertion() {
+        let status = SupplyLedger.status(for: [entry(5, .deviceReading, 2), entry(0, .adjust, 3)])
+        #expect(status?.count == 2)
+        #expect(status?.source == .charm)
         #expect(status?.updatedAt == start.addingTimeInterval(300))
     }
 
-    @Test func deviceReadingOverridesAndCarriesSource() {
-        let status = SupplyLedger.status(for: [entry(0, .adjust, 10), entry(1, .deviceReading, 3)])
-        #expect(status?.count == 3)
-        #expect(status?.source == .container)
-    }
-
-    @Test func countIsClampedToCapacity() {
-        let status = SupplyLedger.status(for: [entry(0, .adjust, 10), entry(1, .refill, 10)])
-        #expect(status?.count == SupplyLedger.capacity)
+    @Test func countIsClampedToTheCharm() {
+        #expect(SupplyLedger.status(for: [entry(0, .adjust, 10)])?.count == SupplyLedger.capacity)
         #expect(SupplyLedger.status(for: [entry(0, .adjust, -3)])?.count == 0)
     }
 
-    @Test(arguments: [(0, SupplyLedger.Level.empty), (1, .low), (2, .low), (3, .available)])
+    @Test(arguments: [(0, SupplyLedger.Level.empty), (1, .low), (2, .stocked), (3, .full)])
     func levels(count: Int, expected: SupplyLedger.Level) {
-        let status = SupplyLedger.Status(count: count, updatedAt: start, source: .user)
-        #expect(SupplyLedger.level(of: status, lowThreshold: 2) == expected)
-    }
-
-    @Test func maxRefillNeverNegative() {
-        #expect(SupplyLedger.maxRefill(currentCount: 4) == 8)
-        #expect(SupplyLedger.maxRefill(currentCount: 12) == 0)
-        #expect(SupplyLedger.maxRefill(currentCount: 20) == 0)
+        #expect(SupplyLedger.level(of: count) == expected)
     }
 }

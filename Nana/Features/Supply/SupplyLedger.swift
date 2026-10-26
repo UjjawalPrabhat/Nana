@@ -2,8 +2,10 @@ import Foundation
 
 /// Pure supply rules. Kept free of SwiftData and SwiftUI so it can be unit tested.
 nonisolated enum SupplyLedger {
-    /// How many items the container holds. Update once the hardware is final.
-    static let capacity = 12
+    /// Slots in the charm.
+    static let capacity = 3
+    /// "Running low" means one left.
+    static let lowThreshold = 1
 
     struct Entry: Equatable, Sendable {
         var date: Date
@@ -18,35 +20,26 @@ nonisolated enum SupplyLedger {
     }
 
     enum Level: Equatable, Sendable {
-        case notSet
         case empty
         case low
-        case available
+        case stocked
+        case full
     }
 
-    /// Replays the log in date order. Returns `nil` when nothing has been recorded yet.
+    /// The latest entry wins. Returns `nil` when nothing has been recorded yet.
     static func status(for entries: [Entry]) -> Status? {
-        var status: Status?
-        for entry in entries.sorted(by: { $0.date < $1.date }) {
-            let count = switch entry.kind {
-            case .refill: (status?.count ?? 0) + entry.amount
-            case .adjust, .deviceReading: entry.amount
-            }
-            status = Status(count: min(max(count, 0), capacity), updatedAt: entry.date, source: entry.kind.source)
+        entries.max { $0.date < $1.date }.map {
+            Status(count: min(max($0.amount, 0), capacity), updatedAt: $0.date, source: $0.kind.source)
         }
-        return status
     }
 
-    static func level(of status: Status?, lowThreshold: Int) -> Level {
-        guard let status else { return .notSet }
-        if status.count == 0 { return .empty }
-        if status.count <= lowThreshold { return .low }
-        return .available
-    }
-
-    /// The most a refill can add without overflowing the container.
-    static func maxRefill(currentCount: Int) -> Int {
-        max(0, capacity - currentCount)
+    static func level(of count: Int) -> Level {
+        switch count {
+        case ...0: .empty
+        case ...lowThreshold: .low
+        case capacity...: .full
+        default: .stocked
+        }
     }
 }
 
