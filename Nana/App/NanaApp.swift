@@ -5,28 +5,50 @@ import SwiftUI
 struct NanaApp: App {
     private let modelContainer: ModelContainer
     @State private var containerStore: ContainerStore
-    @State private var companion = NanaCompanion()
-    @Environment(\.scenePhase) private var scenePhase
+    @State private var placeMonitor: PlaceMonitor
+    @State private var leftBehind: LeftBehindNudge
+    @State private var router: AppRouter
 
     init() {
+        UserDefaults.standard.register(defaults: AppSettings.defaults)
         do {
-            modelContainer = try ModelContainer(for: SupplyEvent.self, LessonCompletion.self)
+            modelContainer = try ModelContainer(for: SupplyEvent.self, Place.self)
         } catch {
             fatalError("Could not open Nana's local store: \(error)")
         }
-        _containerStore = State(initialValue: ContainerStore(modelContext: modelContainer.mainContext))
+
+        // Composition root: build the services once and wire their events together.
+        let scheduler = NotificationScheduler()
+        let containerStore = ContainerStore(modelContext: modelContainer.mainContext, nudges: scheduler)
+        let placeMonitor = PlaceMonitor()
+        let leftBehind = LeftBehindNudge(scheduler: scheduler)
+        let router = AppRouter()
+
+        containerStore.onLinkChange = { leftBehind.charmLinkChanged(disconnectedSince: $0) }
+        placeMonitor.onChange = { leftBehind.placeChanged(isInside: $0) }
+        scheduler.onOpen = { router.open($0) }
+        leftBehind.charmLinkChanged(disconnectedSince: containerStore.disconnectedSince)
+
+        // Started here, not from a view: iOS relaunches the app in the background
+        // for Bluetooth and place events, and no view appears then.
+        containerStore.start()
+        Task { await placeMonitor.start() }
+
+        _containerStore = State(initialValue: containerStore)
+        _placeMonitor = State(initialValue: placeMonitor)
+        _leftBehind = State(initialValue: leftBehind)
+        _router = State(initialValue: router)
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .tint(.brandGreen)
+                .tint(.cobalt)
+                .preferredColorScheme(.light)
                 .environment(containerStore)
-                .environment(companion)
-                .task { containerStore.start() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { companion.recordActive() }
+                .environment(placeMonitor)
+                .environment(leftBehind)
+                .environment(router)
         }
         .modelContainer(modelContainer)
     }

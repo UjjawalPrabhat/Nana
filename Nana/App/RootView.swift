@@ -1,61 +1,34 @@
+import SwiftData
 import SwiftUI
 
 struct RootView: View {
     @AppStorage(AppSettings.hasOnboarded) private var hasOnboarded = false
+    @Query private var places: [Place]
+    @Environment(PlaceMonitor.self) private var placeMonitor
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
-        PrivacyGate {
+        @Bindable var router = router
+        Group {
             if hasOnboarded {
-                MainTabView()
+                HomeView()
+                    .sheet(isPresented: $router.showsSettings) {
+                        NavigationStack { SettingsView() }
+                    }
+                    .fullScreenCover(item: $router.cover) { cover in
+                        switch cover {
+                        case .guide: GuideView()
+                        case .stayedBehind: StayedBehindView()
+                        }
+                    }
             } else {
                 OnboardingFlow {
                     withAnimation { hasOnboarded = true }
                 }
             }
         }
-    }
-}
-
-struct MainTabView: View {
-    enum Section: String {
-        case home, learn, settings
-    }
-
-    @State private var selection = Self.initialSection
-    @State private var debugLesson = Self.initialLesson
-
-    var body: some View {
-        TabView(selection: $selection) {
-            Tab("Home", systemImage: "house", value: .home) {
-                HomeView()
-            }
-            Tab("Learn", systemImage: "leaf", value: .learn) {
-                LearnView()
-            }
-            Tab("Settings", systemImage: "gearshape", value: Section.settings) {
-                SettingsView()
-            }
+        .task(id: places.map(\.region)) {
+            await placeMonitor.sync(places.map(\.region))
         }
-        .fullScreenCover(item: $debugLesson) { lesson in
-            LessonPlayerView(lesson: lesson)
-        }
-    }
-
-    // Debug builds accept `-NanaStartTab learn` and `-NanaOpenLesson <id>` for screenshots and UI tests.
-    private static var initialSection: Section {
-        #if DEBUG
-        UserDefaults.standard.string(forKey: "NanaStartTab").flatMap(Section.init) ?? .home
-        #else
-        .home
-        #endif
-    }
-
-    private static var initialLesson: Curriculum.Lesson? {
-        #if DEBUG
-        let id = UserDefaults.standard.string(forKey: "NanaOpenLesson")
-        return ContentLibrary.bundled.curriculum.lessons.first { $0.id == id }
-        #else
-        nil
-        #endif
     }
 }

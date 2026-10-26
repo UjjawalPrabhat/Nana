@@ -1,29 +1,27 @@
 import SwiftData
 import SwiftUI
 
+/// One charm, one number. Reads the app's state and hands it to `HomeContent`.
 struct HomeView: View {
     @Query(sort: \SupplyEvent.date) private var events: [SupplyEvent]
-    @Query private var completions: [LessonCompletion]
-    @Environment(NanaCompanion.self) private var companion
-    @State private var activeLesson: Curriculum.Lesson?
-    @Environment(\.contentLibrary) private var library
-    @AppStorage(AppSettings.lowSupplyThreshold) private var lowThreshold = AppSettings.defaultLowSupplyThreshold
-    @AppStorage(AppSettings.lowSupplyReminderOn) private var reminderOn = false
-    @AppStorage(AppSettings.showNanaOnHome) private var showNana = true
+    @Environment(ContainerStore.self) private var containerStore
+    @Environment(LeftBehindNudge.self) private var leftBehind
+    @Environment(AppRouter.self) private var router
+    @State private var isFixingCount = false
 
-    @State private var sheet: Sheet?
-
-    private enum Sheet: Identifiable {
-        case addRefill(current: Int)
-        case adjust(current: Int?)
-        case pair
-
-        var id: String {
-            switch self {
-            case .addRefill: "addRefill"
-            case .adjust: "adjust"
-            case .pair: "pair"
-            }
+    var body: some View {
+        // Left behind is time based, so check it again every half minute.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HomeContent(
+                state: state(at: context.date),
+                awaySince: leftBehind.disconnectedSince,
+                onFixCount: { isFixingCount = true },
+                onOpenGuide: { router.cover = .guide },
+                onOpenSettings: { router.showsSettings = true }
+            )
+        }
+        .sheet(isPresented: $isFixingCount) {
+            FixCountSheet(currentCount: status?.count)
         }
     }
 
@@ -31,76 +29,148 @@ struct HomeView: View {
         SupplyLedger.status(for: events.map(\.ledgerEntry))
     }
 
+    private func state(at date: Date) -> HomeState {
+        #if DEBUG
+        if let sample = HomeState.launchArgumentSample { return sample }
+        #endif
+        return HomeState.make(
+            status: status,
+            connection: containerStore.connection,
+            isLeftBehind: leftBehind.isLeftBehind(at: date)
+        )
+    }
+}
+
+/// Home's layout for a given state, with no app dependencies of its own
+/// apart from the left-behind tile.
+struct HomeContent: View {
+    var state: HomeState
+    var awaySince: Date?
+    var onFixCount: () -> Void
+    var onOpenGuide: () -> Void
+    var onOpenSettings: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    SupplyCard(
-                        status: status,
-                        level: SupplyLedger.level(of: status, lowThreshold: lowThreshold),
-                        onAddRefill: { sheet = .addRefill(current: status?.count ?? 0) },
-                        onAdjust: { sheet = .adjust(current: status?.count) }
-                    )
-
-                    TodayLessonCard(
-                        lesson: library.todaysLesson(completed: Set(completions.map(\.lessonID)))
-                    ) { activeLesson = $0 }
-
-                    ContainerRow { sheet = .pair }
-
-                    reminderRow
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-            }
-            .nanaCanvas()
-            .navigationTitle("Your supply")
-            .toolbar {
-                if showNana {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        let snapshot = companion.snapshot(library: library, completions: completions)
-                        NanaView(stage: snapshot.stage, mood: snapshot.mood, isCompact: true)
-                            .frame(width: 34, height: 34)
-                    }
-                }
+        // One screen, no scrolling, unless the text is too big to fit.
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView { layout }
+            } else {
+                layout
             }
         }
-        .fullScreenCover(item: $activeLesson) { lesson in
-            LessonPlayerView(lesson: lesson)
-        }
-        .sheet(item: $sheet) { sheet in
-            switch sheet {
-            case .addRefill(let current): AddRefillSheet(currentCount: current)
-            case .adjust(let current): AdjustCountSheet(currentCount: current)
-            case .pair: PairContainerView { _ in self.sheet = nil }
-            }
-        }
+        .nanaScreen()
     }
 
-    private var reminderRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: reminderOn ? "bell" : "bell.slash")
-                .foregroundStyle(Color.textSecondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(reminderOn ? "Reminders are on" : "Reminders are off")
-                    .font(.subheadline.weight(.semibold))
-                Text("Change this in Settings.")
-                    .font(.footnote)
-                    .foregroundStyle(Color.textSecondary)
+    private var layout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if state.variant == .away {
+                awayBanner.padding(.top, 12)
             }
+            Button(action: onFixCount) {
+                VStack(alignment: .leading, spacing: 16) {
+                    count
+                    chips
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Opens Fix count")
+            .padding(.top, state.variant == .away ? 14 : 28)
+
+            Spacer(minLength: 12)
+            Button(action: onFixCount) {
+                ViewThatFits(in: .vertical) {
+                    CharmView(count: state.charmCount, isDimmed: state.variant == .away)
+                    CharmView(count: state.charmCount, isDimmed: state.variant == .away, scale: 0.7)
+                }
+                .rotationEffect(.degrees(-4))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Fix count")
+            .frame(maxWidth: .infinity)
+            Spacer(minLength: 12)
+
+            HomeTiles(onOpenGuide: onOpenGuide)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+    }
+
+    private var header: some View {
+        HStack {
+            Wordmark()
             Spacer()
+            Button(action: onOpenSettings) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.nightInk)
+                    .frame(width: 46, height: 46)
+                    .background(Color.card, in: .rect(cornerRadius: 16))
+                    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+            }
+            .accessibilityLabel("Settings")
         }
-        .foregroundStyle(Color.textPrimary)
-        .padding(16)
-        .background(Color.surfaceMuted, in: .rect(cornerRadius: 18))
+    }
+
+    private var awayBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 22, weight: .semibold))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Your charm stayed behind").font(.nanaLabel)
+                if let awaySince {
+                    Text("Out of range since \(awaySince.formatted(date: .omitted, time: .shortened))")
+                        .font(.nanaFootnote)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .nanaCard(.tangerine, cornerRadius: 20, padding: 12)
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var count: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 12) {
+            Text(state.countText)
+                .font(state.variant == .away ? .nanaCountSmall : .nanaCount)
+                .foregroundStyle(state.isStale ? Color.stale : .cobalt)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            Text(state.countLabel)
+                .font(.nanaCountLabel)
+                .lineHeight(.multiple(factor: 0.95))
+                .foregroundStyle(.cobalt)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var chips: some View {
+        HStack(spacing: 10) {
+            StatusChip(text: Text(state.statusText), dot: state.isStale ? .stale : .cobalt)
+            if let note = state.note {
+                NoteChip(text: Text(note))
+            }
+        }
     }
 }
 
-#Preview {
-    HomeView()
-        .modelContainer(for: SupplyEvent.self, inMemory: true)
-        .environment(ContainerStore.preview())
-        .environment(NanaCompanion())
+#if DEBUG
+#Preview("Every state") {
+    TabView {
+        ForEach(HomeState.Variant.allCases, id: \.self) { variant in
+            HomeContent(state: .sample(variant), awaySince: .now.addingTimeInterval(-480),
+                        onFixCount: {}, onOpenGuide: {}, onOpenSettings: {})
+        }
+    }
+    .tabViewStyle(.page)
+    .environment(LeftBehindNudge(scheduler: SilentNudgeScheduler()))
 }
+#endif
