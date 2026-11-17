@@ -24,7 +24,7 @@ The iPhone pairs with the container through Apple's **AccessorySetupKit** picker
 | Interval | 100–200 ms for the first 30 s after power-on or the pairing button; then 1–2 s to save battery |
 | Address | LE privacy (resolvable private address) recommended so the container can't be tracked |
 
-The recessed **pairing button** on the base restarts fast advertising for 30 s.
+Holding the **pairing button** for 3 s restarts fast advertising for 30 s. On the proof-of-concept board this is the ESP32-C3's BOOT button (GPIO9); its final place on the charm isn't decided.
 
 ## 3. GATT
 
@@ -50,7 +50,7 @@ This works whichever sensor the hardware team picks:
 - **The sensor gives an exact count** (e.g. per-slot switches or IR): set `countValid`. `levelPercent` is optional.
 - **The sensor gives a level only** (e.g. load cell or ToF distance): set `levelValid` only. The app converts the level to an estimated count (`round(level / 100 × capacity)`) and labels it as an estimate.
 
-Example: 6 items, exact count, lid closed → `01 01 06 FF`.
+Example: 3 items, exact count, lid closed → `01 01 03 FF`.
 
 **When to notify:** after the lid closes and the reading has been stable for about 2 s. Don't stream while the lid is open. Also notify once when a central subscribes.
 
@@ -70,7 +70,7 @@ Unknown opcodes → respond with ATT error `0x80` (application error).
 
 | Service | Characteristic | Notes |
 |---|---|---|
-| Battery `0x180F` | Battery Level `0x2A19` (Read, Notify) | `u8` 0–100 |
+| Battery `0x180F` | Battery Level `0x2A19` (Read, Notify) | `u8` 0–100. Optional: leave the service out if the hardware can't measure its battery, and the app shows "Connected" without a level. The proof of concept leaves it out. |
 | Device Information `0x180A` | Manufacturer `0x2A29`, Model `0x2A24`, Firmware `0x2A26` (Read) | UTF-8 strings, e.g. `Nana`, `Nana C1`, `0.1.0` |
 
 ## 4. Security and privacy
@@ -87,44 +87,9 @@ Unknown opcodes → respond with ATT error `0x80` (application error).
 3. One connection at a time is fine.
 4. After power loss, the last calibration values persist (NVS/flash).
 
-## 6. Reference firmware outline (ESP32-C3 + NimBLE-Arduino)
+## 6. Reference firmware
 
-```cpp
-// Sketch outline only. The hardware team owns the real firmware.
-#include <NimBLEDevice.h>
-#define NANA_SERVICE  "1153E3C4-0AF1-4576-94FB-86B822E893DD"
-#define STOCK_CHAR    "ED573018-FB2B-4EEA-91C0-21E9287C1F6A"
-#define CAPACITY_CHAR "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052"
-#define COMMAND_CHAR  "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E"
-
-NimBLECharacteristic* stock;
-uint8_t packet[4] = {1, 0x01, 0, 0xFF};   // version 1, countValid
-
-void publish(uint8_t count) {
-  packet[2] = count;
-  stock->setValue(packet, 4);
-  stock->notify();
-}
-
-void setup() {
-  NimBLEDevice::init("Nana");
-  auto server  = NimBLEDevice::createServer();
-  auto service = server->createService(NANA_SERVICE);
-  stock = service->createCharacteristic(STOCK_CHAR, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-  uint8_t capacity = 3;
-  service->createCharacteristic(CAPACITY_CHAR, NIMBLE_PROPERTY::READ)->setValue(&capacity, 1);
-  service->createCharacteristic(COMMAND_CHAR, NIMBLE_PROPERTY::WRITE); // + callbacks for 0x01–0x03
-  service->start();
-  auto adv = NimBLEDevice::getAdvertising();
-  adv->addServiceUUID(NANA_SERVICE);
-  adv->setName("Nana");
-  adv->start();
-}
-
-void loop() {
-  // read sensor → when the lid closes and the value is stable for ~2 s → publish(count)
-}
-```
+The proof-of-concept firmware is [`Firmware/NanaCharm`](../Firmware/NanaCharm/NanaCharm.ino) (ESP32-C3 Super Mini + NimBLE-Arduino 2.x). [`Firmware/README.md`](../Firmware/README.md) covers wiring and the build.
 
 ## 7. Testing without hardware
 
@@ -135,3 +100,4 @@ void loop() {
 ## Changelog
 
 - v1 (2026-10-20): first draft.
+- v1 (2026-11-10): capacity examples use 3; Battery service optional; pairing button is BOOT on the proof of concept; reference firmware moved to `Firmware/`.

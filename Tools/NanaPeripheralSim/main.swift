@@ -17,7 +17,7 @@ let capacity: UInt8 = 3
 final class Simulator: NSObject, CBPeripheralManagerDelegate {
     private var manager: CBPeripheralManager!
     private var stock: CBMutableCharacteristic!
-    private var packet: [UInt8] = [0x01, 0x01, 6, 0xFF]
+    private var packet: [UInt8] = [0x01, 0x01, 3, 0xFF]
 
     override init() {
         super.init()
