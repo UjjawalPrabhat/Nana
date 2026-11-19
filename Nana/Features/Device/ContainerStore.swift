@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftData
 
 /// App-wide state for the paired charm. Turns stock readings into
@@ -120,11 +121,18 @@ final class ContainerStore {
     }
 
     private func record(_ reading: StockReading) {
-        guard !reading.lidOpen, let count = reading.estimatedCount(capacity: capacity) else { return }
+        guard !reading.lidOpen, let count = reading.estimatedCount(capacity: capacity) else {
+            Logger.charm.debug("Reading not recorded: \(reading.lidOpen ? "lid open" : "no count or level", privacy: .public)")
+            return
+        }
         let entries = (try? modelContext.fetch(FetchDescriptor<SupplyEvent>()))?.map(\.ledgerEntry) ?? []
         let previous = SupplyLedger.status(for: entries)
         // Reconnects re-send the same reading; only log real changes.
-        guard previous?.count != count || previous?.source == .user else { return }
+        guard previous?.count != count || previous?.source == .user else {
+            Logger.charm.debug("Reading not recorded: count \(count) unchanged")
+            return
+        }
+        Logger.charm.debug("Recorded count \(count) (was \(previous?.count ?? -1))")
         modelContext.insert(SupplyEvent(kind: .deviceReading, amount: count))
         try? modelContext.save()
         if defaults.bool(forKey: AppSettings.lowSupplyNudgeOn),

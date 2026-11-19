@@ -1,5 +1,6 @@
 import AccessorySetupKit
 import CoreBluetooth
+import OSLog
 import SwiftUI
 
 /// Real container: AccessorySetupKit for pairing, CoreBluetooth for data.
@@ -58,6 +59,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     // MARK: AccessorySetupKit
 
     private func handle(_ event: ASAccessoryEvent) {
+        Logger.charm.debug("Setup event \(String(describing: event.eventType), privacy: .public)")
         switch event.eventType {
         case .activated:
             accessory = session.accessories.first
@@ -98,11 +100,15 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     private func connectIfPossible(_ central: CBCentralManager) {
         guard central.state == .poweredOn, let identifier = accessory?.bluetoothIdentifier else { return }
         let target = peripheral ?? central.retrievePeripherals(withIdentifiers: [identifier]).first
-        guard let target else { return }
+        guard let target else {
+            Logger.charm.error("No peripheral for the paired identifier \(identifier, privacy: .public)")
+            return
+        }
         peripheral = target
         target.delegate = self
         if target.state != .connected {
             // No timeout: iOS keeps this pending and connects whenever the container is in range.
+            Logger.charm.debug("Connect pending (state \(target.state.rawValue))")
             central.connect(target)
         }
     }
@@ -116,6 +122,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
 
 extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        Logger.charm.debug("Bluetooth state \(central.state.rawValue)")
         if central.state == .poweredOn {
             connectIfPossible(central)
         } else {
@@ -125,12 +132,14 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         if let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first {
+            Logger.charm.debug("Restored peripheral, state \(restored.state.rawValue)")
             peripheral = restored
             restored.delegate = self
         }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        Logger.charm.debug("Connected")
         onEvent?(.connection(.connected))
         peripheral.discoverServices([
             CBUUID(string: NanaGATT.service),
@@ -139,11 +148,13 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        Logger.charm.debug("Disconnected: \(error?.localizedDescription ?? "no error", privacy: .public)")
         onEvent?(.connection(.disconnected))
         if accessory != nil { central.connect(peripheral) }
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        Logger.charm.error("Failed to connect: \(error?.localizedDescription ?? "no error", privacy: .public)")
         onEvent?(.connection(.disconnected))
         if accessory != nil { central.connect(peripheral) }
     }
@@ -151,12 +162,16 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
 
 extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        let found = peripheral.services?.map(\.uuid.uuidString).joined(separator: ", ") ?? "none"
+        Logger.charm.debug("Services: \(found, privacy: .public) \(error?.localizedDescription ?? "", privacy: .public)")
         for service in peripheral.services ?? [] {
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        let found = service.characteristics?.map(\.uuid.uuidString).joined(separator: ", ") ?? "none"
+        Logger.charm.debug("Characteristics of \(service.uuid.uuidString, privacy: .public): \(found, privacy: .public)")
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
             case CBUUID(string: NanaGATT.stock), CBUUID(string: NanaGATT.batteryLevel):
@@ -171,10 +186,19 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard error == nil, let value = characteristic.value else { return }
+        guard error == nil, let value = characteristic.value else {
+            Logger.charm.error("Read of \(characteristic.uuid.uuidString, privacy: .public) failed: \(error?.localizedDescription ?? "no value", privacy: .public)")
+            return
+        }
         switch characteristic.uuid {
         case CBUUID(string: NanaGATT.stock):
-            if let reading = StockPacket.parse(value) { onEvent?(.stock(reading)) }
+            let hex = value.map { String(format: "%02X", $0) }.joined(separator: " ")
+            if let reading = StockPacket.parse(value) {
+                Logger.charm.debug("Stock \(hex, privacy: .public): count \(reading.count ?? -1), lid \(reading.lidOpen ? "open" : "shut", privacy: .public)")
+                onEvent?(.stock(reading))
+            } else {
+                Logger.charm.error("Stock \(hex, privacy: .public) rejected: wrong version or too short")
+            }
         case CBUUID(string: NanaGATT.capacity):
             if let capacity = value.first, capacity > 0 { onEvent?(.capacity(Int(capacity))) }
         case CBUUID(string: NanaGATT.batteryLevel):

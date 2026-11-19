@@ -156,6 +156,30 @@ When the reed switch has arrived and checkpoint 2 shows the lid working:
    - Switch on.
 3. Most likely result: it starts, then restarts over and over when Bluetooth begins. A coin cell can't deliver the bursts of current the radio needs. Report what you see and we'll pick the next option.
 
+## Debugging
+
+`NanaCharm` has `DEBUG = true` at the top. Open the Serial Monitor at 115200 baud and you get:
+
+- `[boot]` lines: why the board restarted (a **BROWNOUT** means the power supply sagged), the lid and sensor settings, and the Bluetooth address.
+- `[lid] raw open/shut` on every edge of the reed switch, before debouncing. A few edges per movement is normal bounce. Edges while nobody touches the lid mean a loose wire or a magnet too far away.
+- `slot N: blocked x/5` for each slot on every lid-triggered read. `(unsteady)` means the wrapper edge sits on the beam: adjust the guide.
+- `[ble]` lines: connect, connection parameters, notifications on/off, commands, and the disconnect reason.
+- A `[status]` line every 5 s: connected, advertising, lid, pin level, count.
+
+Type a letter in the Serial Monitor and press Enter: `s` status, `r` read the slots now and send, `l` print the lid pin for 10 s (move the magnet slowly to find its range), `p` pairing mode, `i` identify blink, `h` help.
+
+On the iPhone side, the app logs Bluetooth traffic to the Xcode console and Console.app (connect the phone, filter on category `charm`): every Stock packet in hex, and why a reading was or wasn't recorded.
+
+Set `DEBUG = false` before measuring battery drain.
+
+### Reed switch checks
+
+1. Set `HAS_LID_SWITCH = true` and upload.
+2. The `[boot]` line shows the lid state. If it says `open` with the lid shut (and `shut` with it open), the switch is normally-closed: set `LID_SHUT_LEVEL = HIGH`.
+3. If it always says `open` whatever the magnet does, the switch isn't reaching ground: check its wires go to GPIO3 and to GND (or GPIO21 with `USE_GROUND_PINS`).
+4. Type `l` and move the magnet away slowly. The distance where it flips should be comfortably more than the lid gap.
+5. Close the lid: about 2 s later you see three `slot` lines and a `Stock ->` line.
+
 ## Troubleshooting
 
 | Symptom | Fix |

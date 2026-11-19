@@ -1,4 +1,10 @@
 import Foundation
+import OSLog
+
+nonisolated extension Logger {
+    /// Charm Bluetooth traffic. In Console.app, filter on category "charm".
+    static let charm = Logger(subsystem: "Nana", category: "charm")
+}
 
 /// Mirrors Docs/BLE_SPEC.md. Change the spec first, then this file.
 nonisolated enum NanaGATT {

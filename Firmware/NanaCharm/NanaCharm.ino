@@ -11,11 +11,23 @@
 
 #include <NimBLEDevice.h>
 #include "driver/gpio.h"
+#include "esp_system.h"
 
 // ============ Settings you may need to change ============
 
 // Turn on once the reed switch is wired between LID_PIN and GND.
 const bool HAS_LID_SWITCH = false;
+
+// What LID_PIN reads when the lid is shut. Most 2-wire door reed switches are
+// "normally open": the magnet closes them, so shut reads LOW. If the log says
+// "open" while the lid is shut (and the other way round), the switch is
+// "normally closed": set this to HIGH.
+const int LID_SHUT_LEVEL = LOW;
+
+// Extra Serial Monitor output for bring-up: raw lid edges, each slot's reading,
+// Bluetooth details and a status line every 5 s. Type h in the Serial Monitor
+// for commands. Set to false for battery tests: printing keeps the chip busier.
+const bool DEBUG = true;
 
 // What the S pin reads when a wrapper blocks the beam (found in step 1).
 const int BLOCKED_LEVEL = HIGH;
@@ -81,10 +93,46 @@ volatile uint16_t connHandle = 0;
 uint32_t fastAdvertisingUntil = 0;
 uint32_t identifyUntil = 0;
 uint32_t connectFlashUntil = 0;
+bool needsReading = true;  // with the lid switch: read once the lid has been shut for 2 s
+uint32_t lidChangedAt = 0;
+
+// ============ Debug output ============
+
+#define debugf(...) \
+  do { \
+    if (DEBUG) Serial.printf(__VA_ARGS__); \
+  } while (0)
+
+const char* resetReasonText() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power on";
+    case ESP_RST_SW: return "software restart";
+    case ESP_RST_PANIC: return "crash (panic)";
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_BROWNOUT: return "BROWNOUT: the power supply sagged";
+    case ESP_RST_DEEPSLEEP: return "woke from deep sleep";
+    case ESP_RST_EXT: return "reset pin";
+    default: return "other";
+  }
+}
+
+// NimBLE reports HCI disconnect reasons as 0x200 + the HCI code.
+const char* disconnectReasonText(int reason) {
+  switch (reason & 0xFF) {
+    case 0x08: return "supervision timeout (out of range or signal lost)";
+    case 0x13: return "the iPhone closed the link";
+    case 0x16: return "the charm closed the link";
+    case 0x3D: return "MIC failure (encryption problem)";
+    case 0x3E: return "connection failed to establish";
+    default: return "see the Bluetooth HCI error codes";
+  }
+}
 
 // ============ Slot sensors ============
 
-bool readSlot(int slot) {
+bool readSlot(int slot, bool log) {
   if (SENSOR_POWER_FROM_GPIO) {
     digitalWrite(SLOT_POWER_PINS[slot], HIGH);
     delay(5);  // let the sensor settle
@@ -95,15 +143,19 @@ bool readSlot(int slot) {
     delay(2);
   }
   if (SENSOR_POWER_FROM_GPIO) digitalWrite(SLOT_POWER_PINS[slot], LOW);
+  // 1 to 4 out of 5 means the edge sits right on the beam: the guide needs adjusting.
+  if (log) debugf("  slot %d: blocked %d/5 -> %s%s\n", slot + 1, blocked, blocked >= 3 ? "filled" : "empty",
+         blocked > 0 && blocked < 5 ? "  (unsteady)" : "");
   return blocked >= 3;
 }
 
 // SEN-2: the count is the number of filled slots. Sensors are read one at a time
 // so the battery never has to power more than one.
-int readCount() {
+// log: print each slot's reading. Off for the once-a-second polling, which would flood the log.
+int readCount(bool log) {
   int filled = 0;
   for (int slot = 0; slot < SLOT_COUNT; slot++) {
-    if (readSlot(slot)) filled++;
+    if (readSlot(slot, log)) filled++;
   }
   return filled;
 }
@@ -117,8 +169,9 @@ void publish() {
   uint8_t packet[4] = {PACKET_VERSION, flags, count >= 0 ? (uint8_t)count : UNKNOWN, UNKNOWN};
   stockChar->setValue(packet, sizeof(packet));
   if (isConnected) stockChar->notify();
-  Serial.printf("Stock -> %02X %02X %02X %02X  (count %d, lid %s)\n",
-                packet[0], packet[1], packet[2], packet[3], count, lidOpen ? "open" : "closed");
+  Serial.printf("Stock -> %02X %02X %02X %02X  (count %d, lid %s)%s\n",
+                packet[0], packet[1], packet[2], packet[3], count, lidOpen ? "open" : "closed",
+                isConnected ? "" : "  [not connected: stored for the next read]");
 }
 
 // ============ Bluetooth ============
@@ -128,15 +181,30 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     connHandle = info.getConnHandle();
     isConnected = true;
     justConnected = true;
+    debugf("[ble] connect from %s, interval %.2f ms, latency %d, timeout %d ms\n",
+           info.getAddress().toString().c_str(), info.getConnInterval() * 1.25,
+           info.getConnLatency(), info.getConnTimeout() * 10);
   }
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& info, int reason) override {
     isConnected = false;
     justDisconnected = true;
+    debugf("[ble] disconnect, reason 0x%03X: %s\n", reason, disconnectReasonText(reason));
+  }
+  void onConnParamsUpdate(NimBLEConnInfo& info) override {
+    debugf("[ble] connection params now: interval %.2f ms, latency %d, timeout %d ms\n",
+           info.getConnInterval() * 1.25, info.getConnLatency(), info.getConnTimeout() * 10);
+  }
+  void onMTUChange(uint16_t mtu, NimBLEConnInfo& info) override {
+    debugf("[ble] MTU %d\n", mtu);
   }
 };
 
 class StockCallbacks : public NimBLECharacteristicCallbacks {
+  void onRead(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    debugf("[ble] Stock read\n");
+  }
   void onSubscribe(NimBLECharacteristic* c, NimBLEConnInfo& info, uint16_t subValue) override {
+    debugf("[ble] Stock notifications %s\n", subValue > 0 ? "on" : "off");
     if (subValue > 0) wantsPublish = true;  // spec: notify once when a central subscribes
   }
 };
@@ -144,6 +212,8 @@ class StockCallbacks : public NimBLECharacteristicCallbacks {
 class CommandCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
     NimBLEAttValue value = c->getValue();
+    debugf("[ble] Command write, %d byte(s), first 0x%02X\n", (int)value.size(),
+           value.size() ? value[0] : 0);
     if (value.size() >= 1 && value[0] == CMD_IDENTIFY) wantsIdentify = true;
     // 0x02 and 0x03 (calibration) don't apply to per-slot sensors, so they're ignored.
   }
@@ -221,33 +291,38 @@ void handleBluetoothEvents() {
 // ============ Lid and count ============
 
 bool readLidOpenRaw() {
-  return digitalRead(LID_PIN) == HIGH;  // magnet away: reed opens, pull-up wins
+  // Pull-up on: with a normally-open switch, magnet away leaves the pin HIGH.
+  return digitalRead(LID_PIN) != LID_SHUT_LEVEL;
 }
 
 void updateWithLidSwitch() {
   static bool rawOpen = readLidOpenRaw();
   static uint32_t rawSince = millis();
-  static uint32_t changedAt = millis();
-  static bool needsReading = true;  // read once after power-on
+  static uint32_t edges = 0;
 
   bool raw = readLidOpenRaw();
   if (raw != rawOpen) {
     rawOpen = raw;
     rawSince = millis();
+    edges++;
+    // Several edges for one movement is normal bounce. Edges with nobody touching
+    // the lid mean a loose wire or a magnet at the edge of its range.
+    debugf("[lid] raw %s (edge %lu)\n", raw ? "open" : "shut", (unsigned long)edges);
   }
   if (rawOpen != lidOpen && millis() - rawSince >= LID_DEBOUNCE_MS) {
     lidOpen = rawOpen;
-    changedAt = millis();
+    lidChangedAt = millis();
     Serial.println(lidOpen ? "Lid opened" : "Lid closed");
     if (lidOpen) {
       publish();  // SEN-4: an opening is logged, the count doesn't change
     } else {
       needsReading = true;
+      debugf("[lid] reading the slots in %lu ms if it stays shut\n", (unsigned long)STABLE_MS);
     }
   }
-  if (!lidOpen && needsReading && millis() - changedAt >= STABLE_MS) {
+  if (!lidOpen && needsReading && millis() - lidChangedAt >= STABLE_MS) {
     needsReading = false;
-    count = readCount();
+    count = readCount(true);
     publish();  // sent after every close; the app ignores repeats
   }
 }
@@ -259,10 +334,11 @@ void updateByPolling() {
 
   if (millis() - lastPoll < POLL_MS) return;
   lastPoll = millis();
-  int reading = readCount();
+  int reading = readCount(false);
   if (reading != candidate) {
     candidate = reading;
     candidateSince = millis();
+    debugf("[poll] slots now read %d, sending if it holds for %lu ms\n", reading, (unsigned long)STABLE_MS);
   }
   if (candidate != count && millis() - candidateSince >= STABLE_MS) {
     count = candidate;
@@ -304,6 +380,65 @@ void updateLed() {
   digitalWrite(LED_PIN, on ? LOW : HIGH);
 }
 
+// ============ Debug status and Serial commands ============
+
+void printStatus() {
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  Serial.printf("[status] up %lus | %s | %s | lid %s (pin %s) | count %d%s | heap %lu\n",
+                (unsigned long)(millis() / 1000),
+                isConnected ? "connected" : "not connected",
+                !adv->isAdvertising() ? "not advertising"
+                  : fastAdvertisingUntil ? "advertising fast" : "advertising slowly",
+                !HAS_LID_SWITCH ? "n/a (HAS_LID_SWITCH off)" : lidOpen ? "open" : "shut",
+                digitalRead(LID_PIN) ? "HIGH" : "LOW",
+                count, HAS_LID_SWITCH && needsReading ? " (reading pending)" : "",
+                (unsigned long)ESP.getFreeHeap());
+}
+
+void printHelp() {
+  Serial.println("Commands: s status | r read slots and send | l lid pin for 10 s");
+  Serial.println("          p pairing mode | i identify blink | h help");
+}
+
+// Prints the lid pin every 200 ms for 10 s, for checking the magnet's range.
+void watchLidPin() {
+  Serial.println("[lid] watching the pin for 10 s. Move the magnet slowly.");
+  for (int i = 0; i < 50; i++) {
+    bool open = readLidOpenRaw();
+    Serial.printf("[lid] pin %s -> %s\n", digitalRead(LID_PIN) ? "HIGH" : "LOW", open ? "open" : "shut");
+    delay(200);
+  }
+}
+
+void handleSerialCommands() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    switch (c) {
+      case 's': printStatus(); break;
+      case 'r':
+        Serial.println("[cmd] reading the slots now");
+        count = readCount(true);
+        publish();
+        break;
+      case 'l': watchLidPin(); break;
+      case 'p': startAdvertising(true); break;
+      case 'i': identifyUntil = millis() + IDENTIFY_MS; break;
+      case 'h': case '?': printHelp(); break;
+      default: break;  // newlines and anything else
+    }
+  }
+}
+
+void updateDebug() {
+  static uint32_t lastStatus = 0;
+  if (!DEBUG) return;
+  handleSerialCommands();
+  if (millis() - lastStatus >= 5000) {
+    lastStatus = millis();
+    printStatus();
+  }
+}
+
 // ============ Main ============
 
 void setup() {
@@ -330,9 +465,23 @@ void setup() {
     }
   }
   lidOpen = HAS_LID_SWITCH && readLidOpenRaw();
+  lidChangedAt = millis();
+
+  if (DEBUG) {
+    delay(1500);  // give the Serial Monitor time to reattach after a reset
+    Serial.printf("\n[boot] reset reason: %s\n", resetReasonText());
+    Serial.printf("[boot] lid switch %s, shut reads %s, lid now %s (pin %s)\n",
+                  HAS_LID_SWITCH ? "on" : "off", LID_SHUT_LEVEL ? "HIGH" : "LOW",
+                  readLidOpenRaw() ? "open" : "shut", digitalRead(LID_PIN) ? "HIGH" : "LOW");
+    Serial.printf("[boot] blocked reads %s, sensors powered %s, CPU %lu MHz\n",
+                  BLOCKED_LEVEL ? "HIGH" : "LOW", SENSOR_POWER_FROM_GPIO ? "from pins" : "from 3V3",
+                  (unsigned long)getCpuFrequencyMhz());
+  }
 
   setupBluetooth();
+  debugf("[boot] Bluetooth address %s\n", NimBLEDevice::getAddress().toString().c_str());
   Serial.println("Nana charm ready");
+  if (DEBUG) printHelp();
 }
 
 void loop() {
@@ -344,5 +493,6 @@ void loop() {
   }
   updateButton();
   updateLed();
+  updateDebug();
   delay(20);
 }
