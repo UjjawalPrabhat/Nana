@@ -7,6 +7,8 @@ struct PairStepView: View {
 
     @Environment(ContainerStore.self) private var containerStore
     @State private var phase: Phase = .ready
+    /// The status icon's tile grows with the text beside it.
+    @ScaledMetric(relativeTo: .body) private var tileSize: CGFloat = 44
 
     enum Phase {
         case ready, searching, paired, failed
@@ -33,10 +35,7 @@ struct PairStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Squeeze\nto pair")
-                .font(.nanaTitle)
-                .lineHeight(.multiple(factor: 0.9))
-                .foregroundStyle(.cobalt)
-                .accessibilityAddTraits(.isHeader)
+                .nanaScreenTitle()
                 .padding(.bottom, 18)
             Text("Hold the button on the side of your charm for 3 seconds, until the light blinks.")
 
@@ -48,7 +47,7 @@ struct PairStepView: View {
             VStack(spacing: 6) {
                 switch phase {
                 case .ready: Button("Pair", action: pair).nanaPrimaryButton()
-                case .searching: Button("Looking nearby") {}.nanaSecondaryButton().disabled(true)
+                case .searching: Button("Looking nearby") {}.nanaSecondaryButton(stroke: .cobalt, fill: .clear).disabled(true)
                 case .paired: Button("Continue", action: onContinue).nanaPrimaryButton()
                 case .failed: Button("Try again", action: pair).nanaPrimaryButton()
                 }
@@ -56,6 +55,8 @@ struct PairStepView: View {
                     Button("The light isn’t blinking") { phase = .failed }
                         .nanaLinkButton(color: .cobalt)
                         .underline()
+                    Button("No charm yet? Try a demo", action: tryDemo)
+                        .nanaLinkButton(color: .cobalt)
                     Button("Skip for now", action: onContinue)
                         .nanaLinkButton()
                 }
@@ -64,6 +65,7 @@ struct PairStepView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
+        .scrollsAtAccessibilitySizes()
         .nanaScreen()
         .animation(.default, value: phase)
         .onAppear { if containerStore.isPaired { phase = .paired } }
@@ -72,10 +74,10 @@ struct PairStepView: View {
     private var statusCard: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.system(size: 18, weight: .bold))
+                .font(.body.bold())
                 .foregroundStyle(phase == .paired ? Color.butter : .nightInk)
                 .symbolEffect(.rotate, isActive: phase == .searching)
-                .frame(width: 44, height: 44)
+                .frame(width: tileSize, height: tileSize)
                 .background(chipFill, in: .rect(cornerRadius: 14))
                 .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.nightInk, lineWidth: 2.5) }
                 .accessibilityHidden(true)
@@ -107,11 +109,29 @@ struct PairStepView: View {
         }
     }
 
+    private func tryDemo() {
+        Task {
+            await containerStore.startDemo()
+            phase = .paired
+        }
+    }
+
     private func pair() {
         phase = .searching
         Task {
             let paired = (try? await containerStore.pair()) ?? false
             phase = paired ? .paired : .failed
+        }
+    }
+}
+
+extension View {
+    /// Shown when pairing from Home or Settings fails. A cancelled sheet isn't a failure.
+    func pairingFailedAlert(isPresented: Binding<Bool>) -> some View {
+        alert("Your charm couldn't be paired", isPresented: isPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Hold its button for 3 seconds, keep it next to your phone and try again.")
         }
     }
 }

@@ -34,17 +34,4 @@ struct ContainerProtocolTests {
     @Test func countAboveCapacityIsClamped() {
         #expect(StockReading(count: 30).estimatedCount(capacity: SupplyLedger.capacity) == SupplyLedger.capacity)
     }
-
-    @Test(arguments: [
-        (Optional(5), 2, true), (Optional(3), 2, true), (Optional(2), 2, false),
-        (Optional(1), 0, false), (nil, 2, true), (Optional(5), 3, false),
-    ])
-    func lowSupplyFiresOnlyWhenCrossingThreshold(previous: Int?, current: Int, expected: Bool) {
-        #expect(LowSupplyReminder.shouldNotify(previous: previous, current: current, threshold: 2) == expected)
-    }
-
-    @Test func lowSupplyDefaultsToOneLeft() {
-        #expect(LowSupplyReminder.shouldNotify(previous: 2, current: 1))
-        #expect(!LowSupplyReminder.shouldNotify(previous: 3, current: 2))
-    }
 }

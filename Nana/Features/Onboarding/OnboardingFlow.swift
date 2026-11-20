@@ -1,20 +1,20 @@
 import SwiftData
 import SwiftUI
 
-/// Welcome → pair the charm → pin your home → two permissions → Home.
+/// Welcome → pair the charm → two permissions → Home.
 /// Every step after Welcome can be skipped and done later from Settings.
 struct OnboardingFlow: View {
     var onFinish: () -> Void
 
     @State private var path = Self.initialPath
 
-    enum Step: Int, Hashable {
-        case pair = 2, pinHome, permissions
+    enum Step: Int {
+        case pair = 2, permissions
     }
 
-    static let stepCount = 4
+    static let stepCount = Step.permissions.rawValue
 
-    // Debug builds accept `-NanaOnboardingStep 2…4` for screenshots and UI tests.
+    // Debug builds accept `-NanaOnboardingStep 2…3` for screenshots and UI tests.
     private static var initialPath: [Step] {
         #if DEBUG
         let step = UserDefaults.standard.integer(forKey: "NanaOnboardingStep")
@@ -30,12 +30,12 @@ struct OnboardingFlow: View {
                 .navigationDestination(for: Step.self) { step in
                     Group {
                         switch step {
-                        case .pair: PairStepView { path.append(.pinHome) }
-                        case .pinHome: PinHomeView { path.append(.permissions) }
+                        case .pair: PairStepView { path.append(.permissions) }
                         case .permissions: PermissionsView(onFinish: onFinish)
                         }
                     }
                     .navigationBarTitleDisplayMode(.inline)
+                    .nanaBackButton()
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             StepCounter(step: step.rawValue, total: Self.stepCount)
@@ -95,16 +95,13 @@ struct WelcomeView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
+        .scrollsAtAccessibilitySizes()
         .nanaScreen()
         .toolbarVisibility(.hidden, for: .navigationBar)
         .sheet(isPresented: $showsPrivacy) {
             NavigationStack {
                 PrivacyPolicyView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showsPrivacy = false }
-                        }
-                    }
+                    .nanaCloseButton { showsPrivacy = false }
             }
         }
     }
@@ -113,8 +110,9 @@ struct WelcomeView: View {
 #if DEBUG
 #Preview {
     OnboardingFlow(onFinish: {})
-        .modelContainer(for: [SupplyEvent.self, Place.self], inMemory: true)
+        .modelContainer(for: SupplyEvent.self, inMemory: true)
         .environment(ContainerStore.preview(paired: false))
-        .environment(PlaceMonitor())
+        .environment(AppRouter())
+        .environment(LeftBehindNudge(scheduler: SilentNudgeScheduler()))
 }
 #endif

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Opens from the left-behind nudge: what happened and two ways to answer it.
 struct StayedBehindView: View {
-    @Query(sort: \SupplyEvent.date) private var events: [SupplyEvent]
+    @Query(SupplyEvent.latest) private var events: [SupplyEvent]
     @Environment(LeftBehindNudge.self) private var leftBehind
     @Environment(\.dismiss) private var dismiss
 
@@ -11,20 +11,11 @@ struct StayedBehindView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.nightInk)
-                    .frame(width: 46, height: 46)
-                    .background(Color.card, in: .rect(cornerRadius: 16))
-                    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+                NanaIconButton("Close", systemImage: "xmark") { dismiss() }
             }
 
             Text("Your charm stayed behind")
-                .font(.nanaTitle)
-                .lineHeight(.multiple(factor: 0.9))
-                .foregroundStyle(.cobalt)
-                .accessibilityAddTraits(.isHeader)
+                .nanaScreenTitle()
                 .padding(.top, 6)
             if let since = leftBehind.disconnectedSince {
                 Text("Last connected \(since, format: .relative(presentation: .named)).")
@@ -51,13 +42,13 @@ struct StayedBehindView: View {
             }
 
             VStack(spacing: 12) {
-                Button("Remind me in 15 min") { leftBehind.snooze() }
+                Button("Remind me in \(Int(LeftBehindRules.snoozeLength / 60)) min") { leftBehind.snooze() }
                     .nanaPrimaryButton()
                 Button("I left it on purpose") {
                     leftBehind.leftOnPurpose()
                     dismiss()
                 }
-                .buttonStyle(NanaSecondaryButtonStyle(stroke: .nightInk, fill: .card))
+                .nanaSecondaryButton()
                 Text("Nudges stop once your charm reconnects.")
                     .font(.nanaFootnote)
                     .foregroundStyle(.inkSoft)
@@ -66,12 +57,17 @@ struct StayedBehindView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
+        .scrollsAtAccessibilitySizes()
         .nanaScreen()
         .animation(.default, value: leftBehind.snoozedUntil)
+        // Back in range: nothing is left behind any more.
+        .onChange(of: leftBehind.disconnectedSince) { _, since in
+            if since == nil { dismiss() }
+        }
     }
 
     private var count: Int? {
-        SupplyLedger.status(for: events.map(\.ledgerEntry))?.count
+        events.first?.status.count
     }
 }
 

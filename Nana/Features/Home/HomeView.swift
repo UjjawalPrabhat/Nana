@@ -3,11 +3,11 @@ import SwiftUI
 
 /// One charm, one number. Reads the app's state and hands it to `HomeContent`.
 struct HomeView: View {
-    @Query(sort: \SupplyEvent.date) private var events: [SupplyEvent]
+    @Query(SupplyEvent.latest) private var events: [SupplyEvent]
     @Environment(ContainerStore.self) private var containerStore
     @Environment(LeftBehindNudge.self) private var leftBehind
     @Environment(AppRouter.self) private var router
-    @State private var isFixingCount = false
+    @State private var pairingFailed = false
 
     var body: some View {
         // Left behind is time based, so check it again every half minute.
@@ -15,18 +15,21 @@ struct HomeView: View {
             HomeContent(
                 state: state(at: context.date),
                 awaySince: leftBehind.disconnectedSince,
-                onFixCount: { isFixingCount = true },
+                isDemo: containerStore.isDemoRunning,
+                onPair: pair,
+                onTryDemo: { Task { await containerStore.startDemo() } },
                 onOpenGuide: { router.cover = .guide },
                 onOpenSettings: { router.showsSettings = true }
             )
         }
-        .sheet(isPresented: $isFixingCount) {
-            FixCountSheet(currentCount: status?.count)
-        }
+        .pairingFailedAlert(isPresented: $pairingFailed)
     }
 
-    private var status: SupplyLedger.Status? {
-        SupplyLedger.status(for: events.map(\.ledgerEntry))
+    private func pair() {
+        Task {
+            // A cancelled sheet returns false; only real errors are shown.
+            do { _ = try await containerStore.pair() } catch { pairingFailed = true }
+        }
     }
 
     private func state(at date: Date) -> HomeState {
@@ -34,7 +37,7 @@ struct HomeView: View {
         if let sample = HomeState.launchArgumentSample { return sample }
         #endif
         return HomeState.make(
-            status: status,
+            status: events.first?.status,
             connection: containerStore.connection,
             isLeftBehind: leftBehind.isLeftBehind(at: date)
         )
@@ -46,7 +49,9 @@ struct HomeView: View {
 struct HomeContent: View {
     var state: HomeState
     var awaySince: Date?
-    var onFixCount: () -> Void
+    var isDemo = false
+    var onPair: () -> Void
+    var onTryDemo: () -> Void
     var onOpenGuide: () -> Void
     var onOpenSettings: () -> Void
 
@@ -70,29 +75,32 @@ struct HomeContent: View {
             if state.variant == .away {
                 awayBanner.padding(.top, 12)
             }
-            Button(action: onFixCount) {
-                VStack(alignment: .leading, spacing: 16) {
-                    count
-                    chips
-                }
+            VStack(alignment: .leading, spacing: 16) {
+                count
+                chips
             }
-            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityHint("Opens Fix count")
             .padding(.top, state.variant == .away ? 14 : 28)
 
             Spacer(minLength: 12)
-            Button(action: onFixCount) {
-                ViewThatFits(in: .vertical) {
-                    CharmView(count: state.charmCount, isDimmed: state.variant == .away)
-                    CharmView(count: state.charmCount, isDimmed: state.variant == .away, scale: 0.7)
-                }
-                .rotationEffect(.degrees(-4))
+            ViewThatFits(in: .vertical) {
+                CharmView(count: state.charmCount, isDimmed: state.variant == .away)
+                CharmView(count: state.charmCount, isDimmed: state.variant == .away, scale: 0.7)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Opens Fix count")
+            .rotationEffect(.degrees(-4))
             .frame(maxWidth: .infinity)
             Spacer(minLength: 12)
+
+            if !state.isPaired {
+                // Without a charm Home has nothing to count, so lead the way to one.
+                VStack(spacing: 4) {
+                    Button("Pair your charm", action: onPair)
+                        .nanaPrimaryButton()
+                    Button("No charm yet? Try a demo", action: onTryDemo)
+                        .nanaLinkButton(color: .cobalt)
+                }
+                .padding(.bottom, 12)
+            }
 
             HomeTiles(onOpenGuide: onOpenGuide)
         }
@@ -102,25 +110,21 @@ struct HomeContent: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             Wordmark()
-            Spacer()
-            Button(action: onOpenSettings) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.nightInk)
-                    .frame(width: 46, height: 46)
-                    .background(Color.card, in: .rect(cornerRadius: 16))
-                    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+            if isDemo {
+                NoteChip(text: Text("Demo charm"))
+                    .accessibilityLabel("Using the demo charm")
             }
-            .accessibilityLabel("Settings")
+            Spacer()
+            NanaIconButton("Settings", systemImage: "gearshape", action: onOpenSettings)
         }
     }
 
     private var awayBanner: some View {
         HStack(spacing: 12) {
-            Image(systemName: "mappin.and.ellipse")
-                .font(.system(size: 22, weight: .semibold))
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(.title2.weight(.semibold))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Your charm stayed behind").font(.nanaLabel)
@@ -166,7 +170,7 @@ struct HomeContent: View {
     TabView {
         ForEach(HomeState.Variant.allCases, id: \.self) { variant in
             HomeContent(state: .sample(variant), awaySince: .now.addingTimeInterval(-480),
-                        onFixCount: {}, onOpenGuide: {}, onOpenSettings: {})
+                        onPair: {}, onTryDemo: {}, onOpenGuide: {}, onOpenSettings: {})
         }
     }
     .tabViewStyle(.page)

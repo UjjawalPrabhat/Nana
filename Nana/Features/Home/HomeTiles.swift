@@ -32,13 +32,15 @@ private struct LeftBehindTile: View {
                 Text("Left-behind nudge")
                     .font(.nanaCardTitle)
                     .foregroundStyle(.cobalt)
-                Text("When you leave it behind, outside your places")
+                Text("When you leave it behind")
                     .font(.nana(.text, size: 13, relativeTo: .caption))
                     .foregroundStyle(.inkSoft)
             }
+            .accessibilityHidden(true)  // the toggle below says the same
             Spacer(minLength: 0)
             NudgeToggle(AppSettings.leftBehindNudgeOn, onChange: leftBehind.reschedule) {}
                 .accessibilityLabel("Left-behind nudge")
+                .accessibilityHint("When you leave it behind")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(minHeight: 118)

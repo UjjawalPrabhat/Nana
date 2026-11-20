@@ -27,8 +27,9 @@ struct NanaPrimaryButtonStyle: ButtonStyle {
 
 /// Full-width outlined button: the second choice next to a primary one.
 struct NanaSecondaryButtonStyle: ButtonStyle {
-    var stroke: Color = .cobalt
-    var fill: Color = .clear
+    var stroke: Color = .nightInk
+    var fill: Color = .card
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -37,17 +38,19 @@ struct NanaSecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 56)
             .background(fill, in: .rect(cornerRadius: 20))
             .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(stroke, lineWidth: 3) }
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.7 : 1)
             .contentShape(.rect)
     }
 }
 
 /// Small outlined pill button, e.g. "Allow notifications".
 struct NanaPillButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .nanaPill()
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.7 : 1)
             .contentShape(.rect)
     }
 }
@@ -55,13 +58,14 @@ struct NanaPillButtonStyle: ButtonStyle {
 /// Bold text button with a 44pt target, e.g. "Skip for now".
 struct NanaLinkButtonStyle: ButtonStyle {
     var color: Color = .nightInk
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.nanaLabel)
             .foregroundStyle(color)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .opacity(configuration.isPressed ? 0.6 : 1)
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.6 : 1)
             .contentShape(.rect)
     }
 }
@@ -71,8 +75,8 @@ extension View {
         buttonStyle(NanaPrimaryButtonStyle())
     }
 
-    func nanaSecondaryButton() -> some View {
-        buttonStyle(NanaSecondaryButtonStyle())
+    func nanaSecondaryButton(stroke: Color = .nightInk, fill: Color = .card) -> some View {
+        buttonStyle(NanaSecondaryButtonStyle(stroke: stroke, fill: fill))
     }
 
     func nanaLinkButton(color: Color = .nightInk) -> some View {
@@ -114,6 +118,24 @@ extension View {
             .background(Color.butter.ignoresSafeArea())
             .toolbarBackground(.hidden, for: .navigationBar)
     }
+
+    /// One-screen layouts scroll only at accessibility text sizes, where they'd
+    /// otherwise clip or push their buttons off screen.
+    func scrollsAtAccessibilitySizes() -> some View {
+        modifier(AccessibilityScroll())
+    }
+}
+
+private struct AccessibilityScroll: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    func body(content: Content) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            ScrollView { content }
+        } else {
+            content
+        }
+    }
 }
 
 /// A card of rows split by Lilac rules, like the board's Settings groups.
@@ -138,8 +160,7 @@ struct RowGroup<Content: View>: View {
                 }
             }
         }
-        .background(Color.card, in: .rect(cornerRadius: 24))
-        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.nightInk, lineWidth: 3) }
+        .nanaCard(padding: 0)
     }
 }
 
@@ -207,18 +228,15 @@ struct IconTile: View {
     var systemImage: String
     var fill: Color = .banana
     var size: CGFloat = 40
-    var isDashed = false
 
     var body: some View {
         Image(systemName: systemImage)
             .font(.system(size: size * 0.45, weight: .bold))
-            .foregroundStyle(isDashed ? Color.cobalt : .nightInk)
+            .foregroundStyle(.nightInk)
             .frame(width: size, height: size)
             .background(fill, in: .rect(cornerRadius: size / 3))
             .overlay {
-                RoundedRectangle(cornerRadius: size / 3)
-                    .strokeBorder(isDashed ? Color.cobalt : .nightInk,
-                                  style: StrokeStyle(lineWidth: 2.5, dash: isDashed ? [5, 4] : []))
+                RoundedRectangle(cornerRadius: size / 3).strokeBorder(.nightInk, lineWidth: 2.5)
             }
             .accessibilityHidden(true)
     }
@@ -235,7 +253,7 @@ struct Wordmark: View {
     }
 }
 
-/// "2 of 4" in onboarding.
+/// "2 of 3" in onboarding.
 struct StepCounter: View {
     var step: Int
     var total: Int
@@ -281,30 +299,14 @@ struct NanaToggleStyle: ToggleStyle {
 }
 
 /// Equal pills where exactly one is picked, e.g. "1 min · 2 min · 5 min".
-/// One row by default; pass `columns` to wrap longer labels into a grid.
 struct ChoiceRow<Value: Hashable>: View {
     var title: LocalizedStringKey
     var options: [Value]
     @Binding var selection: Value
-    var columns: Int?
     var label: (Value) -> Text
 
-    init(
-        title: LocalizedStringKey,
-        options: [Value],
-        selection: Binding<Value>,
-        columns: Int? = nil,
-        label: @escaping (Value) -> Text
-    ) {
-        self.title = title
-        self.options = options
-        _selection = selection
-        self.columns = columns
-        self.label = label
-    }
-
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns ?? options.count),
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: options.count),
                   spacing: 8) {
             ForEach(options, id: \.self) { option in
                 let isSelected = option == selection
@@ -329,6 +331,7 @@ struct ChoiceRow<Value: Hashable>: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ScrollView {
         VStack(alignment: .leading, spacing: 16) {
@@ -341,9 +344,9 @@ struct ChoiceRow<Value: Hashable>: View {
                 NoteChip(text: Text("Running low"))
             }
             RowGroup {
-                Toggle(isOn: .constant(true)) { RowLabel("Left behind", detail: Text("Outside your places")) }
+                Toggle(isOn: .constant(true)) { RowLabel("Left behind", detail: Text("When your charm stays out of range")) }
                     .toggleStyle(NanaToggleStyle())
-                Text("Reconnect").font(.nanaLabel)
+                Text("Forget this charm").font(.nanaLabel)
             }
             ChoiceRow(title: "Wait", options: [1, 2, 5], selection: .constant(2)) { Text("\($0) min") }
         }
@@ -351,3 +354,4 @@ struct ChoiceRow<Value: Hashable>: View {
     }
     .nanaScreen()
 }
+#endif

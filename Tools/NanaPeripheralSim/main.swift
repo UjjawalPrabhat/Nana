@@ -9,6 +9,7 @@ import CoreBluetooth
 import Foundation
 
 let serviceUUID = CBUUID(string: "1153E3C4-0AF1-4576-94FB-86B822E893DD")
+let pairingUUID = CBUUID(string: "8029197C-AEF8-4F54-8155-96DBF7774EB0")
 let stockUUID = CBUUID(string: "ED573018-FB2B-4EEA-91C0-21E9287C1F6A")
 let capacityUUID = CBUUID(string: "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052")
 let commandUUID = CBUUID(string: "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E")
@@ -17,7 +18,8 @@ let capacity: UInt8 = 3
 final class Simulator: NSObject, CBPeripheralManagerDelegate {
     private var manager: CBPeripheralManager!
     private var stock: CBMutableCharacteristic!
-    private var packet: [UInt8] = [0x01, 0x01, 3, 0xFF]
+    private var packet: [UInt8] = [0x01, 0x01, capacity, 0xFF]
+    private var hasPendingUpdate = false
 
     override init() {
         super.init()
@@ -41,8 +43,9 @@ final class Simulator: NSObject, CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
         if let error { print("Couldn't add service: \(error)"); return }
         peripheral.startAdvertising([
+            // Always in pairing mode, so the app's pairing sheet lists it (Docs/BLE_SPEC.md 2).
             CBAdvertisementDataLocalNameKey: "Nana",
-            CBAdvertisementDataServiceUUIDsKey: [serviceUUID],
+            CBAdvertisementDataServiceUUIDsKey: [pairingUUID],
         ])
         print("Advertising as a Nana container. Count = \(packet[2]). Type a number and press Return.")
     }
@@ -53,15 +56,23 @@ final class Simulator: NSObject, CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        var result = CBATTError.Code.success
         for request in requests {
             switch request.value?.first {
             case 0x01: print("→ identify: (blink blink)")
             case 0x02: print("→ calibrate empty")
             case 0x03: print("→ calibrate full")
-            default: print("→ unknown command")
+            default:
+                print("→ unknown command")
+                result = .unlikelyError  // ATT 0x0E; the spec's 0x80 application error isn't available here
             }
         }
-        peripheral.respond(to: requests[0], withResult: .success)
+        peripheral.respond(to: requests[0], withResult: result)
+    }
+
+    // A notification that didn't fit in the send queue is sent again once there's room.
+    func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
+        if hasPendingUpdate { publish() }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
@@ -82,7 +93,8 @@ final class Simulator: NSObject, CBPeripheralManagerDelegate {
     private func publish() {
         guard let stock else { return }
         let sent = manager.updateValue(Data(packet), for: stock, onSubscribedCentrals: nil)
-        print("Stock → \(packet.map { String(format: "%02X", $0) }.joined(separator: " "))\(sent ? "" : " (queued)")")
+        hasPendingUpdate = !sent
+        print("Stock → \(packet.map { String(format: "%02X", $0) }.joined(separator: " "))\(sent ? "" : " (queue full, will resend)")")
     }
 }
 

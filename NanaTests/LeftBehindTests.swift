@@ -7,11 +7,10 @@ struct LeftBehindRulesTests {
 
     private func input(
         disconnected: Bool = true,
-        inside: Bool = false,
         snoozedUntil: Date? = nil,
         dismissed: Bool = false
     ) -> LeftBehindRules.Input {
-        .init(disconnectedSince: disconnected ? since : nil, isInsidePlace: inside, wait: 120,
+        .init(disconnectedSince: disconnected ? since : nil, wait: 120,
               snoozedUntil: snoozedUntil, isDismissed: dismissed)
     }
 
@@ -21,9 +20,8 @@ struct LeftBehindRulesTests {
         #expect(LeftBehindRules.isLeftBehind(input(), now: since.addingTimeInterval(120)))
     }
 
-    @Test func staysQuietWhileConnectedInsideAPlaceOrDismissed() {
+    @Test func staysQuietWhileConnectedOrDismissed() {
         #expect(LeftBehindRules.nudgeDate(for: input(disconnected: false)) == nil)
-        #expect(LeftBehindRules.nudgeDate(for: input(inside: true)) == nil)
         #expect(LeftBehindRules.nudgeDate(for: input(dismissed: true)) == nil)
     }
 
@@ -31,6 +29,13 @@ struct LeftBehindRulesTests {
         let later = since.addingTimeInterval(900)
         #expect(LeftBehindRules.nudgeDate(for: input(snoozedUntil: later)) == later)
         #expect(LeftBehindRules.isLeftBehind(input(snoozedUntil: later), now: since.addingTimeInterval(300)))
+    }
+
+    @Test func bluetoothOffPausesTheNudge() {
+        var paused = input()
+        paused.isPaused = true
+        #expect(LeftBehindRules.nudgeDate(for: paused) == nil)
+        #expect(!LeftBehindRules.isLeftBehind(paused, now: since.addingTimeInterval(600)))
     }
 
     @Test func snoozeEndingBeforeTheWaitIsIgnored() {
@@ -41,13 +46,6 @@ struct LeftBehindRulesTests {
 
 @MainActor
 struct LeftBehindNudgeTests {
-    private final class RecordingScheduler: NudgeScheduling {
-        var scheduled: [Date] = []
-        var cancels = 0
-        func schedule(_ nudge: Nudge, at date: Date) { scheduled.append(date) }
-        func cancel(_ nudge: Nudge) { cancels += 1 }
-    }
-
     private let now = Date(timeIntervalSince1970: 2_000_000)
     private let scheduler = RecordingScheduler()
     private let defaults: UserDefaults
@@ -55,6 +53,7 @@ struct LeftBehindNudgeTests {
     init() {
         defaults = UserDefaults(suiteName: "tests.\(UUID().uuidString)")!
         defaults.register(defaults: AppSettings.defaults)
+        defaults.set(true, forKey: AppSettings.leftBehindNudgeOn)
     }
 
     private func makeNudge() -> LeftBehindNudge {
@@ -64,25 +63,8 @@ struct LeftBehindNudgeTests {
     @Test func schedulesOnceForOneTrip() {
         let nudge = makeNudge()
         nudge.charmLinkChanged(disconnectedSince: now)
-        nudge.placeChanged(isInside: false)
         nudge.reschedule()
-        #expect(scheduler.scheduled == [now.addingTimeInterval(120)])
-    }
-
-    @Test func enteringAPlaceCancels() {
-        let nudge = makeNudge()
-        nudge.charmLinkChanged(disconnectedSince: now)
-        nudge.placeChanged(isInside: true)
-        #expect(scheduler.cancels == 1)
-        #expect(!nudge.isLeftBehind(at: now.addingTimeInterval(600)))
-    }
-
-    @Test func leavingAPlaceLaterNudgesForTheOldDisconnect() {
-        let nudge = makeNudge()
-        nudge.placeChanged(isInside: true)
-        nudge.charmLinkChanged(disconnectedSince: now)
-        nudge.placeChanged(isInside: false)
-        #expect(scheduler.scheduled == [now.addingTimeInterval(120)])
+        #expect(scheduler.scheduled.map(\.date) == [now.addingTimeInterval(120)])
     }
 
     @Test func reconnectingEndsTheTrip() {
@@ -98,7 +80,33 @@ struct LeftBehindNudgeTests {
         let nudge = makeNudge()
         nudge.charmLinkChanged(disconnectedSince: now)
         nudge.snooze()
-        #expect(scheduler.scheduled.last == now.addingTimeInterval(LeftBehindRules.snoozeLength))
+        #expect(scheduler.scheduled.last?.date == now.addingTimeInterval(LeftBehindRules.snoozeLength))
+    }
+
+    @Test func bluetoothOffKeepsTheTripAndItsSnooze() {
+        let nudge = makeNudge()
+        nudge.charmLinkChanged(disconnectedSince: now)
+        nudge.snooze()
+        nudge.bluetoothAvailabilityChanged(isAvailable: false)
+        #expect(scheduler.cancels == 1)
+        #expect(!nudge.isLeftBehind(at: now.addingTimeInterval(600)))
+        nudge.bluetoothAvailabilityChanged(isAvailable: true)
+        #expect(nudge.snoozedUntil == now.addingTimeInterval(LeftBehindRules.snoozeLength))
+        #expect(nudge.isLeftBehind(at: now.addingTimeInterval(600)))
+    }
+
+    @Test func changingTheWaitAfterTheNudgeDoesNotRepeatIt() {
+        let nudge = LeftBehindNudge(scheduler: scheduler, defaults: defaults, now: { [now] in now.addingTimeInterval(3600) })
+        nudge.charmLinkChanged(disconnectedSince: now)
+        #expect(scheduler.scheduled.count == 1)
+        defaults.set(5, forKey: AppSettings.leftBehindWaitMinutes)
+        nudge.reschedule()
+        #expect(scheduler.scheduled.count == 1)
+    }
+
+    @Test func nudgesStartOffUntilTheUserAgrees() {
+        #expect(AppSettings.defaults[AppSettings.leftBehindNudgeOn] as? Bool == false)
+        #expect(AppSettings.defaults[AppSettings.lowSupplyNudgeOn] as? Bool == false)
     }
 
     @Test func switchedOffNeverSchedules() {
@@ -106,5 +114,17 @@ struct LeftBehindNudgeTests {
         let nudge = makeNudge()
         nudge.charmLinkChanged(disconnectedSince: now)
         #expect(scheduler.scheduled.isEmpty)
+    }
+}
+
+struct NudgeTextTests {
+    @Test(arguments: [Nudge.leftBehind, .lowSupply], [false, true])
+    func lockScreenTextNeverSaysWhatsInTheCharm(nudge: Nudge, discreet: Bool) {
+        let text = nudge.text(discreet: discreet)
+        #expect(!"\(text.title) \(text.body)".localizedCaseInsensitiveContains("condom"))
+    }
+
+    @Test func discreetTextIsTheSameForEveryNudge() {
+        #expect(Nudge.leftBehind.text(discreet: true) == Nudge.lowSupply.text(discreet: true))
     }
 }

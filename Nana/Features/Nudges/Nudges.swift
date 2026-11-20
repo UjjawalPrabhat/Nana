@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UserNotifications
 
 /// Every notification Nana can send. Each kind has a fixed identifier, so a new
@@ -6,6 +7,24 @@ import UserNotifications
 nonisolated enum Nudge: String, Sendable {
     case leftBehind = "nana.leftBehind"
     case lowSupply = "nana.lowSupply"
+
+    /// What the notification says. Useful, but a lock screen can be seen by
+    /// others, so it never says what the charm holds.
+    func text(discreet: Bool) -> (title: String, body: String) {
+        if discreet {
+            return (String(localized: "Nana"), String(localized: "You have a reminder."))
+        }
+        return switch self {
+        case .leftBehind: (
+            String(localized: "Your charm stayed behind"),
+            String(localized: "It's out of range. Head back for it, or open Nana to snooze.")
+        )
+        case .lowSupply: (
+            String(localized: "Your charm is running low"),
+            String(localized: "Restock before you head out.")
+        )
+        }
+    }
 }
 
 /// Somewhere nudges can be scheduled. The real one is `NotificationScheduler`;
@@ -15,8 +34,8 @@ protocol NudgeScheduling: AnyObject {
     func cancel(_ nudge: Nudge)
 }
 
-/// Local notifications with one neutral text for every kind, because a lock
-/// screen can be seen by others.
+/// Local notifications. Their text says what happened without naming what's in
+/// the charm, and can be made fully generic in Settings.
 final class NotificationScheduler: NSObject, NudgeScheduling {
     /// Called when someone taps a nudge.
     var onOpen: ((Nudge) -> Void)?
@@ -37,13 +56,17 @@ final class NotificationScheduler: NSObject, NudgeScheduling {
     }
 
     func schedule(_ nudge: Nudge, at date: Date) {
+        let text = nudge.text(discreet: UserDefaults.standard.bool(forKey: AppSettings.discreetNudges))
         let content = UNMutableNotificationContent()
-        content.title = String(localized: "Reminder")
-        content.body = String(localized: "Your reminder is ready.")
+        content.title = text.title
+        content.body = text.body
         content.sound = .default
-        let delay = max(1, date.timeIntervalSinceNow)
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
-        center.add(UNNotificationRequest(identifier: nudge.rawValue, content: content, trigger: trigger))
+        let delay = date.timeIntervalSinceNow
+        // A nil trigger delivers right away; interval triggers must be positive.
+        let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
+        center.add(UNNotificationRequest(identifier: nudge.rawValue, content: content, trigger: trigger)) { error in
+            if let error { Logger.nudges.error("Could not schedule \(nudge.rawValue, privacy: .public): \(error)") }
+        }
     }
 
     func cancel(_ nudge: Nudge) {
@@ -52,23 +75,27 @@ final class NotificationScheduler: NSObject, NudgeScheduling {
     }
 }
 
-extension NotificationScheduler: @preconcurrency UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
+// iOS may call these off the main thread, so they're nonisolated and hop to the
+// main actor themselves instead of relying on a runtime isolation check.
+extension NotificationScheduler: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .list, .sound])
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        if let nudge = Nudge(rawValue: response.notification.request.identifier) { onOpen?(nudge) }
-        completionHandler()
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let nudge = Nudge(rawValue: response.notification.request.identifier) else { return }
+        await MainActor.run { onOpen?(nudge) }
     }
+}
+
+private extension Logger {
+    nonisolated static let nudges = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Nana", category: "nudges")
 }
 
 #if DEBUG

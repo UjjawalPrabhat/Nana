@@ -30,7 +30,7 @@ extension Font {
     static let nanaTitle = nana(.condensedExtraBold, size: 54, relativeTo: .largeTitle)
     /// Guide step titles.
     static let nanaHeading = nana(.condensedExtraBold, size: 28, relativeTo: .title2)
-    /// The "nana" wordmark and the guide's header.
+    /// The "nana" wordmark and the guide's "The fruit stand" header.
     static let nanaWordmark = nana(.condensedExtraBold, size: 30, relativeTo: .title2)
     /// Home tiles, privacy cards.
     static let nanaCardTitle = nana(.extraBold, size: 21, relativeTo: .title3)
@@ -47,6 +47,15 @@ extension Font {
 }
 
 extension View {
+    /// A screen's big Cobalt title, marked as a header for VoiceOver.
+    func nanaScreenTitle() -> some View {
+        self
+            .font(.nanaTitle)
+            .lineHeight(.multiple(factor: 0.9))
+            .foregroundStyle(.cobalt)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     /// Tracked, uppercased section label: "YOUR CHARM".
     func nanaCaptionStyle() -> some View {
         self

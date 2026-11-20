@@ -13,18 +13,18 @@ Status: **draft v1**. The app already implements this contract against a mock de
 | Container | BLE **peripheral** (GATT server) |
 | iPhone app | BLE **central** (GATT client) |
 
-The iPhone pairs with the container through Apple's **AccessorySetupKit** picker. The picker finds the container by the **Nana service UUID in its advertising packet**, so that UUID must be advertised.
+The iPhone pairs with the container through Apple's **AccessorySetupKit** picker. The picker finds the container by the **pairing UUID in its advertising packet**, which the container advertises only in pairing mode (section 2).
 
 ## 2. Advertising
 
 | Field | Value |
 |---|---|
-| Complete 128-bit service UUID | `1153E3C4-0AF1-4576-94FB-86B822E893DD` (Nana service) |
+| Complete 128-bit service UUID | `1153E3C4-0AF1-4576-94FB-86B822E893DD` (Nana service). In pairing mode, the pairing UUID `8029197C-AEF8-4F54-8155-96DBF7774EB0` instead |
 | Local name | `Nana` (keep it neutral, never describe the contents) |
 | Interval | 100–200 ms for the first 30 s after power-on or the pairing button; then 1–2 s to save battery |
 | Address | LE privacy (resolvable private address) recommended so the container can't be tracked |
 
-Holding the **pairing button** for 3 s restarts fast advertising for 30 s. On the proof-of-concept board this is the ESP32-C3's BOOT button (GPIO9); its final place on the charm isn't decided.
+Holding the **pairing button** for 3 s enters pairing mode for 30 s: fast advertising with the pairing UUID in place of the Nana service UUID. The pairing UUID has no GATT service behind it; it only tells the app's pairing sheet which container to list, so with two containers in a room only the one whose button was held shows up. The container also enters pairing mode at power-on. After a disconnect it advertises fast under `Nana` for 30 s, so the phone reconnects quickly, then slowly. On the proof-of-concept board this is the ESP32-C3's BOOT button (GPIO9); its final place on the charm isn't decided.
 
 ## 3. GATT
 
@@ -41,7 +41,7 @@ Holding the **pairing button** for 3 s restarts fast advertising for 30 s. On th
 | Byte | Name | Meaning |
 |---|---|---|
 | 0 | `version` | Packet format version. **1** for this spec. The app ignores packets with a version it doesn't know. |
-| 1 | `flags` | bit 0 `countValid`: byte 2 holds an exact count<br>bit 1 `levelValid`: byte 3 holds a level<br>bit 2 `lidOpen`: lid is open right now (the reading may be about to change)<br>bit 3 `needsCalibration`: the sensor needs calibration<br>bits 4–7 reserved, send 0 |
+| 1 | `flags` | bit 0 `countValid`: byte 2 holds an exact count<br>bit 1 `levelValid`: byte 3 holds a level<br>bit 2 `lidOpen`: lid is open right now (the count is live and may keep changing)<br>bit 3 `needsCalibration`: the sensor needs calibration<br>bits 4–7 reserved, send 0 |
 | 2 | `count` | Items in the container, `0…capacity`. `0xFF` = unknown. |
 | 3 | `levelPercent` | Approximate fill level, `0…100`. `0xFF` = unknown. |
 
@@ -52,7 +52,13 @@ This works whichever sensor the hardware team picks:
 
 Example: 3 items, exact count, lid closed → `01 01 03 FF`.
 
-**When to notify:** after the lid closes and the reading has been stable for about 2 s. Don't stream while the lid is open. Also notify once when a central subscribes.
+**When to notify:**
+
+- **Lid opens:** notify once with `lidOpen` set and the last count. Switch the sensors on.
+- **While the lid is open:** read the sensors a few times a second and notify whenever the count changes and has held for about 1 s. The app records these counts as they arrive.
+- **Lid closes:** read once more, notify with `lidOpen` clear, then switch the sensors off. While shut, the container only keeps the Bluetooth link (the app needs it for the left-behind nudge).
+- **No lid switch:** read about once a second and notify when the count has held for about 2 s.
+- Also notify once when a central subscribes.
 
 ### 3.3 Command opcodes
 
@@ -64,7 +70,7 @@ Example: 3 items, exact count, lid closed → `01 01 03 FF`.
 
 Unknown opcodes → respond with ATT error `0x80` (application error).
 
-> App support in v1: the app sends only `identify` and ignores the `needsCalibration` flag. Calibration UI comes later, so firmware may calibrate from the button for now.
+> App support in v1: the app sends no commands yet and ignores the `needsCalibration` flag. Calibration UI comes later, so firmware may calibrate from the button for now.
 
 ### 3.4 Standard services (please include)
 
@@ -83,7 +89,7 @@ Unknown opcodes → respond with ATT error `0x80` (application error).
 ## 5. Behaviour the app relies on
 
 1. The container accepts reconnection from a bonded iPhone at any time. The app reconnects in the background (CoreBluetooth state restoration) to receive Stock notifications.
-2. **The app treats a dropped connection as "out of range".** After the wait the user picks (1, 2 or 5 minutes), and only outside their saved places, it sends the left-behind nudge. So the firmware must never drop an idle connection on its own (no idle timeout, no sleep that ends the link) and should keep advertising while disconnected so the phone reconnects as soon as it is back in range.
+2. **The app treats a dropped connection as "out of range".** After the wait the user picks (1, 2 or 5 minutes), it sends the left-behind nudge. So the firmware must never drop an idle connection on its own (no idle timeout, no sleep that ends the link) and should keep advertising while disconnected so the phone reconnects as soon as it is back in range.
 3. One connection at a time is fine.
 4. After power loss, the last calibration values persist (NVS/flash).
 
@@ -101,3 +107,5 @@ The proof-of-concept firmware is [`Firmware/NanaCharm`](../Firmware/NanaCharm/Na
 
 - v1 (2026-10-20): first draft.
 - v1 (2026-11-10): capacity examples use 3; Battery service optional; pairing button is BOOT on the proof of concept; reference firmware moved to `Firmware/`.
+- v1 (2026-11-19): pairing mode advertises the pairing UUID; the app's pairing sheet lists only those.
+- v1 (2026-11-19): counts stream live while the lid is open and the app records them; sensors are off while the lid is shut.

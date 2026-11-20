@@ -2,12 +2,12 @@ import SwiftUI
 
 /// "The fruit stand": how to put a condom on, shown on an uncut (banana) or
 /// cut (eggplant) model. Copy and order come from the redesign board.
-nonisolated struct GuideStep: Identifiable, Equatable, Sendable {
-    enum Model: String, CaseIterable, Sendable {
+nonisolated struct GuideStep: Identifiable, Sendable {
+    enum Model {
         case banana, eggplant
     }
 
-    enum Illustration: String, Sendable {
+    enum Illustration {
         case check, tear, side, peel, pinch, roll, after, lube
     }
 
@@ -18,7 +18,7 @@ nonisolated struct GuideStep: Identifiable, Equatable, Sendable {
     /// Only for an uncut penis.
     var isBananaOnly = false
 
-    static let all: [GuideStep] = [
+    private static let all: [GuideStep] = [
         GuideStep(
             illustration: .check,
             title: "Check the date and the seal",

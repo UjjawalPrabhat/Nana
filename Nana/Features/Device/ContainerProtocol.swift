@@ -3,7 +3,7 @@ import OSLog
 
 nonisolated extension Logger {
     /// Charm Bluetooth traffic. In Console.app, filter on category "charm".
-    static let charm = Logger(subsystem: "Nana", category: "charm")
+    static let charm = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Nana", category: "charm")
 }
 
 /// Mirrors Docs/BLE_SPEC.md. Change the spec first, then this file.
@@ -11,6 +11,8 @@ nonisolated enum NanaGATT {
     static let service = "1153E3C4-0AF1-4576-94FB-86B822E893DD"
     static let stock = "ED573018-FB2B-4EEA-91C0-21E9287C1F6A"
     static let capacity = "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052"
+    /// Advertised instead of `service` only while the charm is in pairing mode. Also listed in Info.plist.
+    static let pairingService = "8029197C-AEF8-4F54-8155-96DBF7774EB0"
 
     static let batteryService = "180F"
     static let batteryLevel = "2A19"
@@ -30,7 +32,7 @@ nonisolated struct StockReading: Equatable, Sendable {
 }
 
 nonisolated enum StockPacket {
-    static let supportedVersion: UInt8 = 1
+    private static let supportedVersion: UInt8 = 1
     private static let unknown: UInt8 = 0xFF
 
     private enum Flag {
@@ -78,6 +80,4 @@ protocol ContainerTransport: AnyObject {
     /// Shows the system pairing UI. Returns `true` if a container was added.
     func pair() async throws -> Bool
     func forget() async throws
-    /// Tries the connection again, e.g. after the user taps Reconnect.
-    func reconnect()
 }

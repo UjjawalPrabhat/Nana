@@ -7,7 +7,7 @@ struct NudgeToggle<Label: View>: View {
     private var label: Label
 
     init(_ key: String, onChange: @escaping () -> Void = {}, @ViewBuilder label: () -> Label) {
-        _isOn = AppStorage(wrappedValue: true, key)
+        _isOn = AppStorage(wrappedValue: AppSettings.defaults[key] as? Bool ?? false, key)
         self.onChange = onChange
         self.label = label()
     }
@@ -19,5 +19,31 @@ struct NudgeToggle<Label: View>: View {
                 onChange()
                 if isOn { Task { _ = await NotificationScheduler.requestAuthorization() } }
             }
+    }
+}
+
+extension URL {
+    /// Nana's notification page in iOS Settings, the only way back after a "Don't allow".
+    static var notificationSettings: URL {
+        URL(string: UIApplication.openNotificationSettingsURLString)!
+    }
+}
+
+extension View {
+    /// Reads notification permission each time the app becomes active, so a change
+    /// made in iOS Settings shows up on return.
+    func onNotificationAuthorization(_ action: @escaping (Bool) -> Void) -> some View {
+        modifier(NotificationAuthorizationCheck(action: action))
+    }
+}
+
+private struct NotificationAuthorizationCheck: ViewModifier {
+    var action: (Bool) -> Void
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content.task(id: scenePhase) {
+            if scenePhase == .active { action(await NotificationScheduler.isAuthorized()) }
+        }
     }
 }

@@ -8,28 +8,19 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Settings")
-                    .font(.nanaTitle)
-                    .lineHeight(.multiple(factor: 0.9))
-                    .foregroundStyle(.cobalt)
-                    .accessibilityAddTraits(.isHeader)
+                    .nanaScreenTitle()
                 CharmSection()
+                DemoSection()
                 NudgesSection()
                 PrivacySection()
                 AboutSection()
-                #if DEBUG
-                DemoSection()
-                #endif
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 34)
         }
         .nanaScreen()
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
-            }
-        }
+        .nanaCloseButton { dismiss() }
     }
 }
 
@@ -61,44 +52,68 @@ private struct Chevron: View {
 
 private struct CharmSection: View {
     @Environment(ContainerStore.self) private var containerStore
-    @Query(sort: \SupplyEvent.date) private var events: [SupplyEvent]
+    @Query(SupplyEvent.latest) private var events: [SupplyEvent]
     @State private var confirmsForget = false
+    @State private var forgetFailed = false
+    @State private var pairingFailed = false
 
     var body: some View {
         SettingsSection(title: "Your charm") {
             HStack(spacing: 14) {
-                CharmBadge(count: SupplyLedger.status(for: events.map(\.ledgerEntry))?.count)
-                RowLabel(title: Text("Nana charm"), detail: Text(statusText))
+                CharmBadge(count: events.first?.status.count)
+                RowLabel(title: containerStore.isDemoRunning ? Text("Demo charm") : Text("Nana charm"),
+                         detail: Text(statusText))
             }
             .nanaCard(.lilac)
             .accessibilityElement(children: .combine)
 
-            RowGroup {
-                if containerStore.isPaired {
-                    Button("Reconnect") { containerStore.reconnect() }
-                        .font(.nanaLabel)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Forget this charm", role: .destructive) { confirmsForget = true }
-                        .font(.nanaLabel)
-                        .foregroundStyle(.destructive)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Button("Pair your charm") {
-                        Task { _ = try? await containerStore.pair() }
-                    }
-                    .font(.nanaLabel)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            // While the demo runs, its own section below has the controls.
+            if !containerStore.isDemoRunning {
+                charmActions
             }
-            .foregroundStyle(.nightInk)
         }
         .confirmationDialog("Forget this charm?", isPresented: $confirmsForget, titleVisibility: .visible) {
             Button("Forget charm", role: .destructive) {
-                Task { try? await containerStore.forget() }
+                Task {
+                    do { try await containerStore.forget() } catch { forgetFailed = true }
+                }
             }
         } message: {
             Text("Nana stops reading the count until you pair it again.")
         }
+        .alert("Something went wrong", isPresented: $forgetFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your charm couldn't be forgotten. Try again, or remove it in iOS Settings › Accessories.")
+        }
+        .pairingFailedAlert(isPresented: $pairingFailed)
+    }
+
+    private var charmActions: some View {
+        RowGroup {
+            if containerStore.isPaired {
+                Button("Forget this charm", role: .destructive) { confirmsForget = true }
+                    .font(.nanaLabel)
+                    .foregroundStyle(.destructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Button("Pair your charm") {
+                    Task {
+                        // A cancelled sheet returns false; only real errors are shown.
+                        do { _ = try await containerStore.pair() } catch { pairingFailed = true }
+                    }
+                }
+                .font(.nanaLabel)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button("No charm yet? Try a demo") {
+                    Task { await containerStore.startDemo() }
+                }
+                .font(.nanaLabel)
+                .foregroundStyle(.cobalt)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .foregroundStyle(.nightInk)
     }
 
     private var statusText: LocalizedStringResource {
@@ -117,56 +132,29 @@ private struct CharmSection: View {
 
 private struct NudgesSection: View {
     @AppStorage(AppSettings.leftBehindWaitMinutes) private var waitMinutes = 2
-    @Query(sort: \Place.createdAt) private var places: [Place]
     @Environment(LeftBehindNudge.self) private var leftBehind
-    @Environment(PlaceMonitor.self) private var placeMonitor
     @Environment(\.openURL) private var openURL
+    @State private var notificationsAllowed = true
+    @AppStorage(AppSettings.leftBehindNudgeOn) private var leftBehindOn = false
+    @AppStorage(AppSettings.lowSupplyNudgeOn) private var lowSupplyOn = false
 
     var body: some View {
         SettingsSection(title: "Nudges") {
+            // Only worth flagging when a nudge is on but can't be delivered.
+            if !notificationsAllowed, leftBehindOn || lowSupplyOn, !AppSettings.isTakingScreenshots {
+                Button {
+                    Task { await allowNotifications() }
+                } label: {
+                    RowLabel("Notifications are off", detail: Text("Nudges can't reach you. Tap to allow them."))
+                }
+                .buttonStyle(.plain)
+                .nanaCard(.tangerine)
+            }
+
             RowGroup {
                 NudgeToggle(AppSettings.leftBehindNudgeOn, onChange: leftBehind.reschedule) {
-                    RowLabel("Left behind", detail: Text("When your charm stays behind outside your places"))
+                    RowLabel("Left behind", detail: Text("When your charm stays out of range"))
                 }
-
-                ForEach(places) { place in
-                    NavigationLink {
-                        PlaceFormView(place: place)
-                    } label: {
-                        HStack(spacing: 12) {
-                            IconTile(systemImage: place.kind.systemImage, fill: place.kind == .home ? .banana : .lilac)
-                            RowLabel(title: Text(place.kind.name),
-                                     detail: Text("About \(Int(place.radius)) m, saved on this phone"))
-                            Chevron()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                NavigationLink {
-                    PlaceFormView()
-                } label: {
-                    HStack(spacing: 12) {
-                        IconTile(systemImage: "plus", fill: .card, isDashed: true)
-                        Text("Add a place").font(.nanaLabel).foregroundStyle(.cobalt)
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Button(action: openLocationSettings) {
-                    HStack(spacing: 12) {
-                        Text("Location access").font(.nanaLabel)
-                        Spacer()
-                        Text(locationText)
-                            .font(.nanaLabelSmall)
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 28)
-                            .background(Color.lilac, in: .capsule)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens iOS Settings")
 
                 NudgeToggle(AppSettings.lowSupplyNudgeOn) {
                     RowLabel("Running low", detail: Text("When one is left"))
@@ -179,30 +167,23 @@ private struct NudgesSection: View {
                     Text("\($0) min")
                 }
             }
-            .nanaCard(padding: 16)
+            .nanaCard()
 
-            Text("Nana stays quiet at your saved places and nudges everywhere else. Without location access, Nana nudges whenever your charm stays out of range for the wait time. Nudges pause if you force quit Nana or turn off Bluetooth.")
+            Text("Nana nudges you whenever your charm stays out of range for the wait time. Nudges pause while Bluetooth is off. If you force quit Nana, it can't tell when your charm comes back, so a nudge may arrive late or by mistake.")
                 .font(.nanaFootnote)
                 .foregroundStyle(.inkSoft)
                 .padding(.horizontal, 4)
         }
         .onChange(of: waitMinutes) { leftBehind.reschedule() }
+        .onNotificationAuthorization { notificationsAllowed = $0 }
     }
 
-    private var locationText: LocalizedStringResource {
-        switch placeMonitor.authorization {
-        case .authorizedAlways: "Always"
-        case .authorizedWhenInUse: "While using"
-        case .notDetermined: "Not set"
-        default: "Off"
-        }
-    }
-
-    private func openLocationSettings() {
-        if placeMonitor.authorization == .notDetermined {
-            placeMonitor.requestAlwaysAccess()
-        } else if let url = URL(string: UIApplication.openSettingsURLString) {
-            openURL(url)
+    /// Asks the first time; after a "Don't allow", only iOS Settings can turn them on.
+    private func allowNotifications() async {
+        if await NotificationScheduler.requestAuthorization() {
+            notificationsAllowed = true
+        } else {
+            openURL(.notificationSettings)
         }
     }
 }
@@ -210,7 +191,10 @@ private struct NudgesSection: View {
 // MARK: Privacy
 
 private struct PrivacySection: View {
+    @AppStorage(AppSettings.discreetNudges) private var isDiscreet = false
+
     var body: some View {
+        let preview = Nudge.leftBehind.text(discreet: isDiscreet)
         SettingsSection(title: "Privacy") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("What your lock screen shows")
@@ -219,8 +203,8 @@ private struct PrivacySection: View {
                 HStack(spacing: 12) {
                     AppMark()
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Reminder").font(.nanaLabelSmall)
-                        Text("Your reminder is ready.").font(.nanaFootnote)
+                        Text(preview.title).font(.nanaLabelSmall)
+                        Text(preview.body).font(.nanaFootnote)
                     }
                     Spacer()
                     Text("now").font(.nanaCaption).foregroundStyle(.inkSoft)
@@ -231,6 +215,14 @@ private struct PrivacySection: View {
                 .accessibilityElement(children: .combine)
             }
             .nanaCard(.cobalt)
+            .animation(.default, value: isDiscreet)
+
+            RowGroup {
+                Toggle(isOn: $isDiscreet) {
+                    RowLabel("Discreet notifications", detail: Text("Only show “You have a reminder.”"))
+                }
+                .toggleStyle(NanaToggleStyle())
+            }
 
             AppIconPicker()
 
@@ -248,10 +240,16 @@ private struct AboutSection: View {
     var body: some View {
         SettingsSection(title: "About") {
             RowGroup {
-                NavigationLink { PrivacyPolicyView() } label: { linkRow("Privacy policy") }
+                NavigationLink { PrivacyPolicyView().nanaBackButton() } label: { linkRow("Privacy policy") }
                     .buttonStyle(.plain)
-                NavigationLink { HealthSafetyView() } label: { linkRow("Health and safety") }
+                NavigationLink { HealthSafetyView().nanaBackButton() } label: { linkRow("Health and safety") }
                     .buttonStyle(.plain)
+                Link(destination: PartnerInfo.contactURL) { linkRow("Contact us", isExternal: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Writes an email to \(PartnerInfo.contactEmail)")
+                Link(destination: PartnerInfo.website) { linkRow("keepnana.com", isExternal: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the website")
             }
             Group {
                 Text("Nana helps you keep condoms close. Nana is not medical advice.")
@@ -263,43 +261,54 @@ private struct AboutSection: View {
         }
     }
 
-    private func linkRow(_ title: LocalizedStringKey) -> some View {
+    private func linkRow(_ title: LocalizedStringKey, isExternal: Bool = false) -> some View {
         HStack {
             Text(title).font(.nanaLabel)
             Spacer()
-            Chevron()
+            if isExternal {
+                Image(systemName: "arrow.up.right")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.inkSoft)
+                    .accessibilityHidden(true)
+            } else {
+                Chevron()
+            }
         }
+        .contentShape(.rect)
     }
 }
 
-#if DEBUG
 // MARK: Demo
 
-/// Drives the demo charm in the Simulator.
+/// Shown while the demo charm is in use: play out what a real charm would do.
 private struct DemoSection: View {
     @Environment(ContainerStore.self) private var containerStore
 
     var body: some View {
-        SettingsSection(title: "Demo charm") {
-            RowGroup {
-                Toggle(isOn: Binding(get: { containerStore.usesDemo }, set: { containerStore.setUsesDemo($0) })) {
-                    RowLabel("Use demo charm")
+        if let demo = containerStore.demo, containerStore.isDemoRunning {
+            SettingsSection(title: "Demo charm") {
+                RowGroup {
+                    Button("Take one out") { demo.simulateChange(by: -1) }
+                    Button("Refill") { demo.simulateChange(by: SupplyLedger.capacity) }
+                    Button("Walk away from it") { demo.simulateInRange(false) }
+                    Button("Come back to it") { demo.simulateInRange(true) }
+                    Button("Stop the demo", role: .destructive) {
+                        Task { await containerStore.stopDemo() }
+                    }
+                    .foregroundStyle(.destructive)
                 }
-                .toggleStyle(NanaToggleStyle())
-                if let demo = containerStore.demo {
-                    Button("Take one out") { demo.simulateChange(by: -1) }.font(.nanaLabel)
-                    Button("Refill") { demo.simulateChange(by: SupplyLedger.capacity) }.font(.nanaLabel)
-                    Button("Walk away from it") { demo.simulateInRange(false) }.font(.nanaLabel)
-                    Button("Come back to it") { demo.simulateInRange(true) }.font(.nanaLabel)
-                }
+                .font(.nanaLabel)
+                .foregroundStyle(.cobalt)
+                Text("The demo charm acts like a real one, without Bluetooth. Walking away starts the left-behind wait you chose.")
+                    .font(.nanaFootnote)
+                    .foregroundStyle(.inkSoft)
+                    .padding(.horizontal, 4)
             }
-            .foregroundStyle(.cobalt)
         }
     }
 }
-#endif
 
-extension Bundle {
+private extension Bundle {
     var appVersion: String {
         let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "–"
         let build = infoDictionary?["CFBundleVersion"] as? String ?? "–"
@@ -310,9 +319,9 @@ extension Bundle {
 #if DEBUG
 #Preview {
     NavigationStack { SettingsView() }
-        .modelContainer(for: [SupplyEvent.self, Place.self], inMemory: true)
+        .modelContainer(for: SupplyEvent.self, inMemory: true)
         .environment(ContainerStore.preview())
-        .environment(PlaceMonitor())
         .environment(LeftBehindNudge(scheduler: SilentNudgeScheduler()))
+        .environment(AppRouter())
 }
 #endif

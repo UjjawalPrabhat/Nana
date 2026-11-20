@@ -1,23 +1,19 @@
 import Foundation
 import SwiftData
 
-/// One change to the charm's count. The current count is never stored directly;
-/// `SupplyLedger` derives it from this log, so Home can say where a number came
-/// from ("Set by you" vs a live reading).
+/// The charm's latest reading. Only one is kept (see `ContainerStore.record`), so
+/// there is no history of when condoms left the charm.
 @Model
 final class SupplyEvent {
     nonisolated enum Kind: String, Codable, Sendable {
-        /// The user set the count to exactly `amount` with Fix count.
-        case adjust
         /// The paired charm reported `amount` items.
         case deviceReading
-
-        var source: Source { self == .deviceReading ? .charm : .user }
-    }
-
-    nonisolated enum Source: Sendable {
-        case user
-        case charm
+        // Created by earlier (TestFlight) builds and no longer made. Kept so their
+        // stored events still decode; launch drops all but the newest anyway.
+        /// A count set by hand.
+        case adjust
+        /// Items added by hand.
+        case refill
     }
 
     var date: Date
@@ -28,5 +24,18 @@ final class SupplyEvent {
         self.date = date
         self.kind = kind
         self.amount = amount
+    }
+
+    /// Deletes every reading, one by one. SwiftData's bulk `delete(model:)` traps
+    /// when the context has other changes pending or a live `@Query` is watching.
+    static func deleteAll(in context: ModelContext) throws {
+        try context.fetch(FetchDescriptor<SupplyEvent>()).forEach(context.delete)
+    }
+
+    /// Just the newest event: the latest reading is the current count.
+    static var latest: FetchDescriptor<SupplyEvent> {
+        var descriptor = FetchDescriptor<SupplyEvent>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        descriptor.fetchLimit = 1
+        return descriptor
     }
 }

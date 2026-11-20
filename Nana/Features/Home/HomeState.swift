@@ -12,7 +12,6 @@ nonisolated struct HomeState: Equatable, Sendable {
     var count: Int?
     /// When the shown count was last confirmed, for the status chip.
     var updatedAt: Date?
-    var source: SupplyEvent.Source?
     var isPaired: Bool
 
     static func make(
@@ -22,15 +21,11 @@ nonisolated struct HomeState: Equatable, Sendable {
     ) -> HomeState {
         let isPaired = connection != .notPaired
         func state(_ variant: Variant) -> HomeState {
-            HomeState(variant: variant, count: status?.count, updatedAt: status?.updatedAt,
-                      source: status?.source, isPaired: isPaired)
+            HomeState(variant: variant, count: status?.count, updatedAt: status?.updatedAt, isPaired: isPaired)
         }
 
         if isLeftBehind { return state(.away) }
-        guard let status else { return state(.unknown) }
-        // A count you fixed by hand stays trusted until the charm reports again.
-        let isLive = connection == .connected || status.source == .user
-        guard isLive else { return state(.unknown) }
+        guard let status, connection == .connected else { return state(.unknown) }
 
         return switch SupplyLedger.level(of: status.count) {
         case .full: state(.full)
@@ -54,6 +49,7 @@ nonisolated struct HomeState: Equatable, Sendable {
         case .full: "in your charm.\nAll set."
         case .stocked, .empty: "left in\nyour charm"
         case .low: "left.\nRestock soon."
+        case .unknown where count == nil: "nothing\ncounted yet"
         case .unknown, .away: "last we\nknew"
         }
     }
@@ -68,7 +64,6 @@ nonisolated struct HomeState: Equatable, Sendable {
             guard let time else { return "Not connected yet" }
             return "Not updated since \(time)"
         case .full, .stocked, .low, .empty:
-            if source == .user, let time { return "Set by you at \(time)" }
             return "Connected, just now"
         }
     }
@@ -88,7 +83,7 @@ extension HomeState {
     static func sample(_ variant: Variant) -> HomeState {
         let counts: [Variant: Int] = [.full: 3, .stocked: 2, .low: 1, .empty: 0, .unknown: 2, .away: 2]
         return HomeState(variant: variant, count: counts[variant], updatedAt: .now.addingTimeInterval(-3600),
-                         source: .charm, isPaired: true)
+                         isPaired: true)
     }
 
     /// `-NanaHomeVariant away` shows that variant, for screenshots.

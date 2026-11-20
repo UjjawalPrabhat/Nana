@@ -11,7 +11,7 @@ final class DemoContainerTransport: ContainerTransport {
     private let defaults: UserDefaults
     private let capacity = SupplyLedger.capacity
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults) {
         self.defaults = defaults
     }
 
@@ -42,11 +42,6 @@ final class DemoContainerTransport: ContainerTransport {
         onEvent?(.connection(.notPaired))
     }
 
-    func reconnect() {
-        guard isPaired else { return }
-        connect()
-    }
-
     /// Simulates the user taking items out or refilling, then closing the lid.
     func simulateChange(by delta: Int) {
         count += delta
@@ -61,7 +56,7 @@ final class DemoContainerTransport: ContainerTransport {
 
     private func connect() {
         onEvent?(.connection(.connecting))
-        Task { @MainActor [weak self] in
+        Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard let self, self.isPaired else { return }
             self.onEvent?(.connection(.connected))

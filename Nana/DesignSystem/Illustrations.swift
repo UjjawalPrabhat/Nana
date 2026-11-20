@@ -156,6 +156,7 @@ struct AppMark: View {
     var body: some View {
         Text(verbatim: "n")
             .font(.nana(.extraBold, size: 18))
+            .dynamicTypeSize(.large)  // fixed-size tile: the letter mustn't outgrow it
             .foregroundStyle(.cobalt)
             .frame(width: 36, height: 36)
             .background(Color.butter, in: .rect(cornerRadius: 10))
@@ -164,6 +165,16 @@ struct AppMark: View {
     }
 }
 
+extension UIImage {
+    /// The full charm, for Apple's pairing sheet.
+    static var charmProduct: UIImage {
+        let renderer = ImageRenderer(content: CharmView(count: SupplyLedger.capacity, scale: 0.75))
+        renderer.scale = 3
+        return renderer.uiImage ?? UIImage()
+    }
+}
+
+#if DEBUG
 #Preview {
     VStack(spacing: 24) {
         CharmView(count: 2).rotationEffect(.degrees(-4))
@@ -174,3 +185,4 @@ struct AppMark: View {
     .padding()
     .nanaScreen()
 }
+#endif

@@ -1,10 +1,7 @@
-import SwiftData
 import SwiftUI
 
 struct RootView: View {
     @AppStorage(AppSettings.hasOnboarded) private var hasOnboarded = false
-    @Query private var places: [Place]
-    @Environment(PlaceMonitor.self) private var placeMonitor
     @Environment(AppRouter.self) private var router
 
     var body: some View {
@@ -12,7 +9,7 @@ struct RootView: View {
         Group {
             if hasOnboarded {
                 HomeView()
-                    .sheet(isPresented: $router.showsSettings) {
+                    .sheet(isPresented: $router.showsSettings, onDismiss: router.settingsDidDismiss) {
                         NavigationStack { SettingsView() }
                     }
                     .fullScreenCover(item: $router.cover) { cover in
@@ -26,9 +23,6 @@ struct RootView: View {
                     withAnimation { hasOnboarded = true }
                 }
             }
-        }
-        .task(id: places.map(\.region)) {
-            await placeMonitor.sync(places.map(\.region))
         }
     }
 }

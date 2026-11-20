@@ -2,34 +2,41 @@ import Foundation
 import OSLog
 import SwiftData
 
-/// App-wide state for the paired charm. Turns stock readings into
-/// `SupplyEvent`s so Home shows them like any other count change, and tracks
-/// when the charm went out of range for the left-behind nudge.
+/// App-wide state for the paired charm. Records stock readings as
+/// `SupplyEvent`s and tracks when the charm went out of range for the
+/// left-behind nudge.
 @Observable
 final class ContainerStore {
     private(set) var connection: ContainerConnection = .notPaired
     private(set) var battery: Int?
-    private(set) var capacity = SupplyLedger.capacity
-    /// When the charm went out of range. `nil` while connected, and while
-    /// Bluetooth is off so nudges pause.
+    /// When the charm went out of range. `nil` while connected or not paired.
+    /// Bluetooth turning off doesn't change it; see `onAvailabilityChange`.
     private(set) var disconnectedSince: Date? {
         didSet {
+            guard disconnectedSince != oldValue else { return }
             defaults.set(disconnectedSince, forKey: Self.disconnectedSinceKey)
-            if disconnectedSince != oldValue { onLinkChange?(disconnectedSince) }
+            onLinkChange?(disconnectedSince)
         }
     }
     private(set) var usesDemo: Bool
 
     /// Called whenever `disconnectedSince` changes.
     @ObservationIgnored var onLinkChange: ((Date?) -> Void)?
+    /// Called with `false` while Bluetooth is off, so nudges pause.
+    @ObservationIgnored var onAvailabilityChange: ((Bool) -> Void)?
 
     var isPaired: Bool { connection != .notPaired }
     var demo: DemoContainerTransport? { transport as? DemoContainerTransport }
+    /// The demo charm is paired and should be labelled as such (not while taking
+    /// App Store screenshots, where it stands in for a real one).
+    var isDemoRunning: Bool { usesDemo && isPaired && !AppSettings.isTakingScreenshots }
 
     @ObservationIgnored private var transport: ContainerTransport
     @ObservationIgnored private let modelContext: ModelContext
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let nudges: NudgeScheduling
+    /// What the charm reports it holds; only used to turn a fill level into a count.
+    @ObservationIgnored private var capacity = SupplyLedger.capacity
 
     private static let useDemoKey = "useDemoContainer"
     private static let disconnectedSinceKey = "container.disconnectedSince"
@@ -43,11 +50,14 @@ final class ContainerStore {
         self.modelContext = modelContext
         self.nudges = nudges
         self.defaults = defaults
-        let usesDemo = forceDemo ?? (defaults.object(forKey: Self.useDemoKey) as? Bool ?? Self.isSimulator)
+        // `bool(forKey:)` also reads "YES"/"NO" from launch arguments.
+        let usesDemo = forceDemo ?? (defaults.object(forKey: Self.useDemoKey) != nil
+            ? defaults.bool(forKey: Self.useDemoKey) : Self.isSimulator)
         self.usesDemo = usesDemo
         self.transport = Self.makeTransport(demo: usesDemo, defaults: defaults)
         self.disconnectedSince = defaults.object(forKey: Self.disconnectedSinceKey) as? Date
         attachTransport()
+        keepOnlyLatestReading()
     }
 
     func start() {
@@ -64,8 +74,19 @@ final class ContainerStore {
         clearDeviceInfo()
     }
 
-    func reconnect() {
-        transport.reconnect()
+    /// Switches to the built-in demo charm and pairs it, so the app can be tried
+    /// (and reviewed) without hardware.
+    func startDemo() async {
+        setUsesDemo(true)
+        _ = try? await transport.pair()
+    }
+
+    /// Leaves the demo. Its made-up count is deleted so it can't pass for a real one.
+    func stopDemo() async {
+        try? await transport.forget()
+        setUsesDemo(false)
+        try? SupplyEvent.deleteAll(in: modelContext)
+        try? modelContext.save()
     }
 
     func setUsesDemo(_ usesDemo: Bool) {
@@ -101,14 +122,13 @@ final class ContainerStore {
         switch event {
         case .connection(let state):
             connection = state
+            onAvailabilityChange?(state != .unavailable)
             switch state {
-            case .connected:
+            case .connected, .notPaired:
                 disconnectedSince = nil
             case .disconnected:
                 if disconnectedSince == nil { disconnectedSince = .now }
-            case .notPaired, .unavailable:
-                disconnectedSince = nil
-            case .connecting:
+            case .unavailable, .connecting:
                 break
             }
         case .stock(let reading):
@@ -121,24 +141,42 @@ final class ContainerStore {
     }
 
     private func record(_ reading: StockReading) {
-        guard !reading.lidOpen, let count = reading.estimatedCount(capacity: capacity) else {
-            Logger.charm.debug("Reading not recorded: \(reading.lidOpen ? "lid open" : "no count or level", privacy: .public)")
+        // Counts arrive live while the lid is open (Docs/BLE_SPEC.md 3.2), so they're recorded either way.
+        guard let estimate = reading.estimatedCount(capacity: capacity) else {
+            Logger.charm.debug("Reading not recorded: no count or level")
             return
         }
-        let entries = (try? modelContext.fetch(FetchDescriptor<SupplyEvent>()))?.map(\.ledgerEntry) ?? []
-        let previous = SupplyLedger.status(for: entries)
+        // Clamped like the stored count is when shown, so the two compare equal.
+        let count = SupplyLedger.clamped(estimate)
+        let current = (try? modelContext.fetch(SupplyEvent.latest))?.first
+        let previous = current?.status.count
         // Reconnects re-send the same reading; only log real changes.
-        guard previous?.count != count || previous?.source == .user else {
+        guard previous != count else {
             Logger.charm.debug("Reading not recorded: count \(count) unchanged")
             return
         }
-        Logger.charm.debug("Recorded count \(count) (was \(previous?.count ?? -1))")
-        modelContext.insert(SupplyEvent(kind: .deviceReading, amount: count))
+        Logger.charm.debug("Recorded count \(count) (was \(previous ?? -1))")
+        // Only the current count is kept: no timeline of when condoms left the charm.
+        if let current {
+            current.amount = count
+            current.date = .now
+            current.kind = .deviceReading
+        } else {
+            modelContext.insert(SupplyEvent(kind: .deviceReading, amount: count))
+        }
         try? modelContext.save()
         if defaults.bool(forKey: AppSettings.lowSupplyNudgeOn),
-           LowSupplyReminder.shouldNotify(previous: previous?.count, current: count) {
+           SupplyLedger.crossedIntoLow(from: previous, to: count) {
             nudges.schedule(.lowSupply, at: .now)
         }
+    }
+
+    /// Earlier builds kept every reading. Drops all but the newest.
+    private func keepOnlyLatestReading() {
+        let all = (try? modelContext.fetch(FetchDescriptor<SupplyEvent>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        guard all.count > 1 else { return }
+        all.dropFirst().forEach(modelContext.delete)
+        try? modelContext.save()
     }
 
     private static var isSimulator: Bool {
@@ -153,11 +191,15 @@ final class ContainerStore {
 #if DEBUG
 extension ContainerStore {
     /// In-memory store with a demo charm, for previews.
+    /// Kept alive for the whole preview session: a context whose container has been
+    /// released traps on its next save.
+    private static let previewContainer = try! ModelContainer(
+        for: SupplyEvent.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+
     static func preview(paired: Bool = true) -> ContainerStore {
-        let container = try! ModelContainer(
-            for: SupplyEvent.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        let container = previewContainer
         let defaults = UserDefaults(suiteName: "preview.\(UUID().uuidString)")!
         defaults.set(paired, forKey: DemoContainerTransport.pairedKey)
         let store = ContainerStore(

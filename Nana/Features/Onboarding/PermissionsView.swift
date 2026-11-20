@@ -6,6 +6,7 @@ struct PermissionsView: View {
     var onFinish: () -> Void
 
     @Environment(ContainerStore.self) private var containerStore
+    @Environment(LeftBehindNudge.self) private var leftBehind
     @Environment(\.openURL) private var openURL
     @State private var notifications: NotificationState = .unknown
 
@@ -16,10 +17,7 @@ struct PermissionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Two quick\nyeses")
-                .font(.nanaTitle)
-                .lineHeight(.multiple(factor: 0.9))
-                .foregroundStyle(.cobalt)
-                .accessibilityAddTraits(.isHeader)
+                .nanaScreenTitle()
                 .padding(.bottom, 18)
             Text("You stay in control. Change either one later in Settings.")
                 .padding(.bottom, 22)
@@ -39,9 +37,7 @@ struct PermissionsView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
         .nanaScreen()
-        .task {
-            if await NotificationScheduler.isAuthorized() { notifications = .allowed }
-        }
+        .onNotificationAuthorization { if $0 { notifications = .allowed } }
     }
 
     private var bluetoothCard: some View {
@@ -59,26 +55,34 @@ struct PermissionsView: View {
     private var notificationsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             cardTitle("Notifications", systemImage: "bell", tile: .lilac, color: .cobalt)
-            Text("For left-behind and low-supply nudges. Off until you switch them on. Your lock screen only ever says **“Your reminder is ready.”**")
+            Text("For left-behind and low-supply nudges. Allowing turns both on; switch either off in Settings. They never say what's in your charm, and you can make them fully discreet in Settings.")
             switch notifications {
             case .unknown:
                 Button("Allow notifications") {
-                    Task {
-                        notifications = await NotificationScheduler.requestAuthorization() ? .allowed : .denied
-                    }
+                    Task { await allowNotifications() }
                 }
                 .buttonStyle(NanaPillButtonStyle())
             case .allowed:
                 Label("Allowed", systemImage: "checkmark")
                     .nanaPill(.cobalt, foreground: .butter)
             case .denied:
-                Button("Turn on in iOS Settings") {
-                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
-                }
+                Button("Turn on in iOS Settings") { openURL(.notificationSettings) }
                 .buttonStyle(NanaPillButtonStyle())
             }
         }
         .nanaCard(cornerRadius: 26, padding: 20)
+    }
+
+    /// A yes here is the user's consent to both nudges, so they switch on with it.
+    private func allowNotifications() async {
+        guard await NotificationScheduler.requestAuthorization() else {
+            notifications = .denied
+            return
+        }
+        notifications = .allowed
+        UserDefaults.standard.set(true, forKey: AppSettings.lowSupplyNudgeOn)
+        UserDefaults.standard.set(true, forKey: AppSettings.leftBehindNudgeOn)
+        leftBehind.reschedule()
     }
 
     private func cardTitle(_ title: LocalizedStringKey, systemImage: String, tile: Color, color: Color) -> some View {

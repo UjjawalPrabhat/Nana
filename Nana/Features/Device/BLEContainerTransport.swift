@@ -1,7 +1,7 @@
 import AccessorySetupKit
 import CoreBluetooth
 import OSLog
-import SwiftUI
+import UIKit
 
 /// Real container: AccessorySetupKit for pairing, CoreBluetooth for data.
 ///
@@ -15,6 +15,11 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var pickerContinuation: CheckedContinuation<Bool, Error>?
+    /// Reports "out of range" if a connect attempt hasn't succeeded in time.
+    private var connectTimeout: Task<Void, Never>?
+
+    /// How long "Connecting" shows before the charm counts as out of range.
+    private static let connectGrace: Duration = .seconds(10)
 
     func start() {
         session.activate(on: .main) { [weak self] event in
@@ -23,11 +28,14 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     }
 
     func pair() async throws -> Bool {
+        guard pickerContinuation == nil else { return false }  // the picker is already up
+        // Only a charm in pairing mode (button just held) advertises this ID, so with
+        // two charms in a room only that one is listed.
         let descriptor = ASDiscoveryDescriptor()
-        descriptor.bluetoothServiceUUID = CBUUID(string: NanaGATT.service)
+        descriptor.bluetoothServiceUUID = .nanaPairing
         let item = ASPickerDisplayItem(
             name: String(localized: "Nana charm"),
-            productImage: Self.productImage,
+            productImage: .charmProduct,
             descriptor: descriptor
         )
         return try await withCheckedThrowingContinuation { continuation in
@@ -44,16 +52,20 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
 
     func forget() async throws {
         guard let accessory else { return }
+        // Let go first, so the disconnect that follows isn't treated as "out of range"
+        // and doesn't start a new connect to the charm being removed.
+        let peripheral = self.peripheral
+        release()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
-        try await session.removeAccessory(accessory)
-    }
-
-    func reconnect() {
-        guard let central else { return }
-        if let peripheral, peripheral.state != .disconnected {
-            central.cancelPeripheralConnection(peripheral)
+        do {
+            try await session.removeAccessory(accessory)
+            // `.accessoryRemoved` reports this too; don't depend on it arriving.
+            onEvent?(.connection(.notPaired))
+        } catch {
+            self.accessory = accessory
+            startCentral()
+            throw error
         }
-        connectIfPossible(central)
     }
 
     // MARK: AccessorySetupKit
@@ -70,8 +82,9 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
             pickerContinuation?.resume(returning: true)
             pickerContinuation = nil
         case .accessoryRemoved:
-            accessory = nil
-            peripheral = nil
+            // Also reached when the charm is removed in iOS Settings.
+            if let peripheral { central?.cancelPeripheralConnection(peripheral) }
+            release()
             onEvent?(.connection(.notPaired))
         case .pickerDidDismiss:
             // Fires after `.accessoryAdded` on success, so this only resolves a cancel.
@@ -82,50 +95,86 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         }
     }
 
+    private func release() {
+        accessory = nil
+        peripheral = nil
+        connectTimeout?.cancel()
+    }
+
     // MARK: CoreBluetooth
 
     private func startCentral() {
-        onEvent?(.connection(.connecting))
-        if let central {
-            connectIfPossible(central)
-        } else {
+        if central == nil {
             central = CBCentralManager(
                 delegate: self,
                 queue: .main,
                 options: [CBCentralManagerOptionRestoreIdentifierKey: "nana.container.central"]
             )
         }
+        showConnecting()
+        connectIfPossible()
     }
 
-    private func connectIfPossible(_ central: CBCentralManager) {
-        guard central.state == .poweredOn, let identifier = accessory?.bluetoothIdentifier else { return }
-        let target = peripheral ?? central.retrievePeripherals(withIdentifiers: [identifier]).first
-        guard let target else {
+    private func connectIfPossible() {
+        guard let central, central.state == .poweredOn, let identifier = accessory?.bluetoothIdentifier else { return }
+        guard let target = peripheral ?? central.retrievePeripherals(withIdentifiers: [identifier]).first else {
             Logger.charm.error("No peripheral for the paired identifier \(identifier, privacy: .public)")
             return
         }
         peripheral = target
         target.delegate = self
-        if target.state != .connected {
-            // No timeout: iOS keeps this pending and connects whenever the container is in range.
-            Logger.charm.debug("Connect pending (state \(target.state.rawValue))")
+        switch target.state {
+        case .connected:
+            didBecomeConnected(target)  // e.g. restored by iOS while still connected
+        case .connecting:
+            break
+        default:
+            // No timeout: iOS keeps this pending and connects whenever the charm is in range.
+            Logger.charm.debug("Connect pending")
             central.connect(target)
         }
     }
 
-    private static var productImage: UIImage {
-        let renderer = ImageRenderer(content: CharmView(count: SupplyLedger.capacity, scale: 0.75))
-        renderer.scale = 3
-        return renderer.uiImage ?? UIImage()
+    private func showConnecting() {
+        connectTimeout?.cancel()
+        // A background wake (state restoration, Bluetooth back on) only gets a few
+        // seconds, too short for the grace period: out of range is out of range.
+        if UIApplication.shared.applicationState == .background {
+            if peripheral?.state != .connected { onEvent?(.connection(.disconnected)) }
+            return
+        }
+        onEvent?(.connection(.connecting))
+        connectTimeout = Task { [weak self] in
+            try? await Task.sleep(for: Self.connectGrace)
+            guard !Task.isCancelled, let self, self.accessory != nil,
+                  self.peripheral?.state != .connected else { return }
+            self.onEvent?(.connection(.disconnected))
+        }
+    }
+
+    private func didBecomeConnected(_ peripheral: CBPeripheral) {
+        connectTimeout?.cancel()
+        onEvent?(.connection(.connected))
+        peripheral.discoverServices([.nanaService, .batteryService])
+    }
+
+    /// Callbacks can still arrive for a charm that was just forgotten.
+    private func isCurrent(_ peripheral: CBPeripheral) -> Bool {
+        accessory != nil && peripheral === self.peripheral
     }
 }
 
 extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         Logger.charm.debug("Bluetooth state \(central.state.rawValue)")
+        // With no charm paired, AccessorySetupKit withdraws Bluetooth access, which
+        // reads as "unauthorized". That isn't Bluetooth being off, so it's ignored.
+        guard accessory != nil else { return }
         if central.state == .poweredOn {
-            connectIfPossible(central)
+            showConnecting()
+            connectIfPossible()
         } else {
+            connectTimeout?.cancel()
             onEvent?(.connection(.unavailable))
         }
     }
@@ -140,23 +189,26 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Logger.charm.debug("Connected")
-        onEvent?(.connection(.connected))
-        peripheral.discoverServices([
-            CBUUID(string: NanaGATT.service),
-            CBUUID(string: NanaGATT.batteryService),
-        ])
+        guard isCurrent(peripheral) else { return }
+        didBecomeConnected(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         Logger.charm.debug("Disconnected: \(error?.localizedDescription ?? "no error", privacy: .public)")
+        guard isCurrent(peripheral) else { return }
         onEvent?(.connection(.disconnected))
-        if accessory != nil { central.connect(peripheral) }
+        central.connect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         Logger.charm.error("Failed to connect: \(error?.localizedDescription ?? "no error", privacy: .public)")
+        guard isCurrent(peripheral) else { return }
         onEvent?(.connection(.disconnected))
-        if accessory != nil { central.connect(peripheral) }
+        // Wait before retrying, so a persistent failure doesn't become a tight loop.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.connectIfPossible()
+        }
     }
 }
 
@@ -174,10 +226,10 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
         Logger.charm.debug("Characteristics of \(service.uuid.uuidString, privacy: .public): \(found, privacy: .public)")
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
-            case CBUUID(string: NanaGATT.stock), CBUUID(string: NanaGATT.batteryLevel):
+            case .nanaStock, .batteryLevel:
                 peripheral.setNotifyValue(true, for: characteristic)
                 peripheral.readValue(for: characteristic)
-            case CBUUID(string: NanaGATT.capacity):
+            case .nanaCapacity:
                 peripheral.readValue(for: characteristic)
             default:
                 break
@@ -191,7 +243,7 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
             return
         }
         switch characteristic.uuid {
-        case CBUUID(string: NanaGATT.stock):
+        case .nanaStock:
             let hex = value.map { String(format: "%02X", $0) }.joined(separator: " ")
             if let reading = StockPacket.parse(value) {
                 Logger.charm.debug("Stock \(hex, privacy: .public): count \(reading.count ?? -1), lid \(reading.lidOpen ? "open" : "shut", privacy: .public)")
@@ -199,12 +251,21 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
             } else {
                 Logger.charm.error("Stock \(hex, privacy: .public) rejected: wrong version or too short")
             }
-        case CBUUID(string: NanaGATT.capacity):
+        case .nanaCapacity:
             if let capacity = value.first, capacity > 0 { onEvent?(.capacity(Int(capacity))) }
-        case CBUUID(string: NanaGATT.batteryLevel):
+        case .batteryLevel:
             if let level = value.first { onEvent?(.battery(Int(min(level, 100)))) }
         default:
             break
         }
     }
+}
+
+private extension CBUUID {
+    static let nanaService = CBUUID(string: NanaGATT.service)
+    static let nanaPairing = CBUUID(string: NanaGATT.pairingService)
+    static let nanaStock = CBUUID(string: NanaGATT.stock)
+    static let nanaCapacity = CBUUID(string: NanaGATT.capacity)
+    static let batteryService = CBUUID(string: NanaGATT.batteryService)
+    static let batteryLevel = CBUUID(string: NanaGATT.batteryLevel)
 }

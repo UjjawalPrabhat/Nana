@@ -4,10 +4,18 @@ import SwiftUI
 struct GuideView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: GuideStep.Model = .banana
-    @State private var index = 0
+    /// The page on screen: a step, or `steps.count` for the done card.
+    @State private var page: Int? = 0
+    @State private var dotsWidth: CGFloat = 0
 
     private var steps: [GuideStep] { GuideStep.steps(for: model) }
+    private var index: Int { page ?? 0 }
     private var isDone: Bool { index >= steps.count }
+
+    /// Moves like a swipe would, so buttons, dots and fingers all agree.
+    private func go(to newPage: Int) {
+        withAnimation(.snappy) { page = min(max(newPage, 0), steps.count) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -15,7 +23,7 @@ struct GuideView: View {
                 header
                 ModelPicker(model: $model)
                     .padding(.top, 8)
-                ticket
+                pager
                     .padding(.top, 14)
                 dots
                     .padding(.top, 16)
@@ -26,48 +34,66 @@ struct GuideView: View {
             .padding(.bottom, 12)
             .nanaScreen()
             .toolbarVisibility(.hidden, for: .navigationBar)
-            .navigationDestination(for: String.self) { _ in HealthSafetyView() }
-            .onChange(of: model) { index = 0 }
+            .onChange(of: model) { page = 0 }
             .animation(.snappy, value: index)
         }
     }
 
     private var header: some View {
         HStack {
-            Button("Close") { dismiss() }
-                .font(.nanaLabel)
-                .foregroundStyle(.cobalt)
-                .frame(minHeight: 44)
+            NanaIconButton("Close", systemImage: "xmark") { dismiss() }
             Spacer()
             Text("The fruit stand")
-                .font(.nana(.condensedExtraBold, size: 26, relativeTo: .title2))
+                .font(.nanaWordmark)
                 .foregroundStyle(.cobalt)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             Text(isDone ? "Done" : "\(index + 1) / \(steps.count)")
+                .accessibilityLabel(isDone ? Text("Done") : Text("Step \(index + 1) of \(steps.count)"))
                 .font(.nanaLabelSmall)
                 .foregroundStyle(.inkSoft)
                 .frame(minWidth: 44, alignment: .trailing)
         }
     }
 
-    private var ticket: some View {
+    /// Swipe left or right between steps, one card at a time.
+    private var pager: some View {
+        ScrollView(.horizontal) {
+            // The gap keeps the neighbouring cards off screen at rest; the scroll view
+            // doesn't clip, so each card's offset shadow stays visible.
+            LazyHStack(spacing: 40) {
+                ForEach(0...steps.count, id: \.self) { page in
+                    ticket(for: page)
+                        .containerRelativeFrame(.horizontal)
+                        .id(page)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $page)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .id(model)  // a new model starts a fresh pager at step 1
+    }
+
+    private func ticket(for page: Int) -> some View {
         Group {
-            if isDone {
-                DoneCard()
+            if page < steps.count {
+                StepCard(step: steps[page], model: model, number: page + 1)
             } else {
-                StepCard(step: steps[index], model: model, number: index + 1)
-                    .id(steps[index].id)
-                    .transition(.opacity)
+                DoneCard()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.card, in: .rect(cornerRadius: 28))
+        .background(Color.card)
         .clipShape(.rect(cornerRadius: 28))
         .overlay { RoundedRectangle(cornerRadius: 28).strokeBorder(.nightInk, lineWidth: 3) }
         .background { RoundedRectangle(cornerRadius: 28).fill(.cobalt).offset(x: 6, y: 6) }
     }
 
+    /// Tap a dot to jump to it, or press and slide along the row to scrub through
+    /// the steps.
     private var dots: some View {
         HStack(spacing: 6) {
             ForEach(steps.indices, id: \.self) { dot in
@@ -76,19 +102,41 @@ struct GuideView: View {
                     .frame(width: dot == index ? 26 : 8, height: 8)
             }
         }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 36)
+        .contentShape(.rect)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { dotsWidth = $0 }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    let dot = dot(at: drag.location.x)
+                    if dot != index { go(to: dot) }
+                }
+        )
+        .sensoryFeedback(.selection, trigger: index)
+        // Back and Next already cover this for VoiceOver.
         .accessibilityHidden(true)
+    }
+
+    /// The step under a finger at `x`. The row is split into equal parts rather than
+    /// using each dot's frame: the current dot is wider, so measuring the real dots
+    /// would shift them under the finger and make the scrub flicker.
+    private func dot(at x: CGFloat) -> Int {
+        guard dotsWidth > 0 else { return index }
+        let part = dotsWidth / CGFloat(steps.count)
+        return min(max(Int(x / part), 0), steps.count - 1)
     }
 
     private var controls: some View {
         HStack(spacing: 12) {
-            Button("Back") { index = max(index - 1, 0) }
-                .buttonStyle(NanaSecondaryButtonStyle(stroke: .nightInk, fill: .card))
+            Button("Back") { go(to: index - 1) }
+                .nanaSecondaryButton()
                 .disabled(index == 0)
             if isDone {
                 Button("Home") { dismiss() }
-                    .buttonStyle(NanaSecondaryButtonStyle(stroke: .nightInk, fill: .banana))
+                    .nanaSecondaryButton(fill: .banana)
             } else {
-                Button(index == steps.count - 1 ? "Finish" : "Next") { index += 1 }
+                Button(index == steps.count - 1 ? "Finish" : "Next") { go(to: index + 1) }
                     .nanaPrimaryButton()
             }
         }
@@ -205,6 +253,7 @@ private struct StepCard: View {
             .padding(.vertical, 16)
             Spacer(minLength: 0)
         }
+        .scrollsAtAccessibilitySizes()
     }
 
     private var illustration: some View {
@@ -267,24 +316,24 @@ private struct DoneCard: View {
                 .accessibilityAddTraits(.isHeader)
             Text("The fruit stand stays open. Come back any time.")
                 .padding(.top, 12)
-            NavigationLink(value: "health") {
+            NavigationLink {
+                HealthSafetyView().nanaBackButton()
+            } label: {
                 Text("If a condom breaks or slips")
-                    .font(.nanaLabelSmall)
-                    .foregroundStyle(.nightInk)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 44)
-                    .background(Color.butter, in: .rect(cornerRadius: 16))
-                    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.nightInk, lineWidth: 2.5) }
+                    .nanaPill(.butter)
             }
             .padding(.top, 18)
         }
         .foregroundStyle(.butter)
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .scrollsAtAccessibilitySizes()
         .background(Color.cobalt)
     }
 }
 
+#if DEBUG
 #Preview {
     GuideView()
 }
+#endif

@@ -1,11 +1,11 @@
 import Foundation
 
 /// Keeps the left-behind nudge scheduled for the right moment. The charm's
-/// link and the place check are pushed in by the app; this only decides.
+/// link is pushed in by the app; this only decides.
 @Observable
 final class LeftBehindNudge {
     private(set) var disconnectedSince: Date?
-    private var isInsidePlace = false
+    private var isBluetoothOff = false
     private(set) var snoozedUntil: Date?
     private(set) var isDismissed: Bool
 
@@ -28,7 +28,7 @@ final class LeftBehindNudge {
     private var input: LeftBehindRules.Input {
         LeftBehindRules.Input(
             disconnectedSince: disconnectedSince,
-            isInsidePlace: isInsidePlace,
+            isPaused: isBluetoothOff,
             wait: TimeInterval(defaults.integer(forKey: AppSettings.leftBehindWaitMinutes) * 60),
             snoozedUntil: snoozedUntil,
             isDismissed: isDismissed
@@ -50,8 +50,10 @@ final class LeftBehindNudge {
         reschedule()
     }
 
-    func placeChanged(isInside: Bool) {
-        isInsidePlace = isInside
+    /// Bluetooth off pauses nudges without ending the trip.
+    func bluetoothAvailabilityChanged(isAvailable: Bool) {
+        guard isBluetoothOff == isAvailable else { return }
+        isBluetoothOff = !isAvailable
         reschedule()
     }
 
@@ -75,7 +77,10 @@ final class LeftBehindNudge {
             return
         }
         // Already scheduled, or already delivered: don't nudge twice for one trip.
-        guard defaults.object(forKey: Self.scheduledForKey) as? Date != date else { return }
+        let previous = defaults.object(forKey: Self.scheduledForKey) as? Date
+        guard previous != date else { return }
+        // Already went off, and the new time (e.g. after changing the wait) is past too.
+        if let previous, previous <= now(), date <= now() { return }
         scheduler.schedule(.leftBehind, at: date)
         defaults.set(date, forKey: Self.scheduledForKey)
     }

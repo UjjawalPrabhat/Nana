@@ -5,6 +5,7 @@ Work through the steps in order. Each step ends with a **checkpoint**. Don't mov
 
 | Folder | What it is |
 |---|---|
+| `Steps/00_Hello` | Check the board is alive: blinks the blue LED |
 | `Steps/01_OneSensor` | Test one slot sensor |
 | `Steps/02_AllSlots` | Test all three slots and the lid |
 | `NanaCharm` | The real firmware. Talks to the app as described in [`Docs/BLE_SPEC.md`](../Docs/BLE_SPEC.md) |
@@ -16,7 +17,7 @@ Work through the steps in order. Each step ends with a **checkpoint**. Don't mov
 | ESP32-C3 Super Mini | The brain, with Bluetooth. Has a blue LED (GPIO8) and a BOOT button (GPIO9) |
 | 3× optical endstop (red board, black U-shaped sensor) | One per slot. An infrared beam crosses the gap; a wrapper edge in the gap blocks it |
 | Reed switch (door sensor, 2 parts) | Lid open or shut. The magnet half goes on the lid |
-| Breadboard + male-to-male jumpers | Shares the board's single GND pin between all the parts |
+| Breadboard + male-to-male jumpers | Optional: shares the real GND pin instead of the extra ground pins (see the pin map) |
 | ESP32 WROOM DevKit V1 | Spare. Not used in these steps |
 | CR2032 + holder | Battery experiment, last step only |
 | Multimeter | Measuring battery drain in step 7 |
@@ -35,7 +36,7 @@ The Super Mini, USB port at the top:
               USB-C
         ┌─────[===]─────┐
  GPIO5  │●             ●│ 5V      ← don't use
- GPIO6  │●             ●│ GND     ← shared by everything, via the breadboard
+ GPIO6  │●             ●│ GND     ← slot 1's G (other grounds: pins 10, 20, 21)
  GPIO7  │●             ●│ 3V3
  GPIO8  │●  (blue LED) ●│ GPIO4
  GPIO9  │●  (BOOT btn) ●│ GPIO3
@@ -80,7 +81,7 @@ The board has only one GND pin, so pins 10, 20 and 21 are held at 0 V by the fir
 
 **If an upload fails:** hold **BOOT**, tap **RESET**, let go of BOOT, then upload again. After uploading, tap **RESET** once.
 
-✅ **Checkpoint 0:** open `Steps/01_OneSensor` and press Upload. You see "Done uploading" or "Hard resetting".
+✅ **Checkpoint 0:** open `Steps/00_Hello` and press Upload. You see "Done uploading", the blue LED blinks once a second, and the Serial Monitor (115200 baud) prints "Hello from the Nana charm board".
 
 ## Step 1: one sensor
 
@@ -125,7 +126,7 @@ If a sensor never changes while powered from its pin, it may need more current t
 1. Build the Nana app from Xcode onto a **real iPhone**. Bluetooth doesn't work in the Simulator.
 2. In the app: **Settings → Demo charm → Use demo charm** must be **off**. If you already paired the demo, choose **Forget this charm** first.
 3. On the charm, **hold BOOT for 3 s**. The LED blinks slowly, which means it's in pairing mode.
-4. In the app, tap **Pair your charm**. Apple's sheet shows the Nana charm. Tap it and connect.
+4. In the app, tap **Pair your charm** within 30 s. Apple's sheet shows the Nana charm. Tap it and connect. Only a charm in pairing mode is listed, so a second charm in the room doesn't show up.
 5. Change a slot, wait 2 s. The number on Home updates.
 
 ✅ **Checkpoint 4:** the Home count follows the slots. Walk away with the phone until it disconnects (Home says out of range after the wait you picked). Walk back: it reconnects on its own within about 10 s.
@@ -135,10 +136,11 @@ If a sensor never changes while powered from its pin, it may need more current t
 When the reed switch has arrived and checkpoint 2 shows the lid working:
 
 1. In `NanaCharm`, set `HAS_LID_SWITCH = true` and upload.
-2. Open the lid, change slots, close the lid. About 2 s after closing, the count is sent.
-3. Opening and closing without changing anything leaves the count unchanged.
+2. Open the lid: the Serial Monitor shows `Lid opened: sensors on`. Change a slot: about 1 s later the count is sent, and the app's Home count follows while the lid is still open.
+3. Close the lid: one last reading is sent, then `sensors off until the lid opens`. Changing slots with the lid shut does nothing.
+4. Opening and closing without changing anything leaves the count unchanged.
 
-✅ **Checkpoint 5:** the count only changes after the lid closes.
+✅ **Checkpoint 5:** the count follows the slots only while the lid is open.
 
 ## Step 6: into the container
 
@@ -162,7 +164,7 @@ When the reed switch has arrived and checkpoint 2 shows the lid working:
 
 - `[boot]` lines: why the board restarted (a **BROWNOUT** means the power supply sagged), the lid and sensor settings, and the Bluetooth address.
 - `[lid] raw open/shut` on every edge of the reed switch, before debouncing. A few edges per movement is normal bounce. Edges while nobody touches the lid mean a loose wire or a magnet too far away.
-- `slot N: blocked x/5` for each slot on every lid-triggered read. `(unsteady)` means the wrapper edge sits on the beam: adjust the guide.
+- `[open] slots now read N` whenever the reading changes while the lid is open, and `slot N: blocked x/5` for each slot on the last read when the lid shuts. `(unsteady)` means the wrapper edge sits on the beam: adjust the guide.
 - `[ble]` lines: connect, connection parameters, notifications on/off, commands, and the disconnect reason.
 - A `[status]` line every 5 s: connected, advertising, lid, pin level, count.
 
@@ -178,7 +180,7 @@ Set `DEBUG = false` before measuring battery drain.
 2. The `[boot]` line shows the lid state. If it says `open` with the lid shut (and `shut` with it open), the switch is normally-closed: set `LID_SHUT_LEVEL = HIGH`.
 3. If it always says `open` whatever the magnet does, the switch isn't reaching ground: check its wires go to GPIO3 and to GND (or GPIO21 with `USE_GROUND_PINS`).
 4. Type `l` and move the magnet away slowly. The distance where it flips should be comfortably more than the lid gap.
-5. Close the lid: about 2 s later you see three `slot` lines and a `Stock ->` line.
+5. Open the lid and change a slot: about 1 s later you see a `Stock ->` line. Close it: three `slot` lines, a last `Stock ->` line, and `sensors off`.
 
 ## Troubleshooting
 

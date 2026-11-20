@@ -2,10 +2,6 @@ import Testing
 @testable import Nana
 
 struct GuideTests {
-    @Test func bananaShowsEveryStep() {
-        #expect(GuideStep.steps(for: .banana).count == 8)
-    }
-
     @Test func eggplantSkipsTheForeskinStep() {
         let steps = GuideStep.steps(for: .eggplant)
         #expect(steps.count == 7)

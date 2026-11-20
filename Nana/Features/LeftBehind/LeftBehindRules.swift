@@ -1,15 +1,14 @@
 import Foundation
 
 /// When a charm counts as left behind, and when to nudge about it.
-/// Pure, so the timing can be tested without Bluetooth, location or a clock.
+/// Pure, so the timing can be tested without Bluetooth or a clock.
 nonisolated enum LeftBehindRules {
     struct Input: Equatable, Sendable {
-        /// When the charm went out of range, or `nil` while it's connected
-        /// (or Bluetooth is off, which pauses nudges).
+        /// When the charm went out of range, or `nil` while it's connected.
         var disconnectedSince: Date?
-        /// Inside a saved place. Without location access this stays `false`,
-        /// so Nana nudges whenever the charm stays out of range.
-        var isInsidePlace: Bool
+        /// Bluetooth is off, so nobody can tell where the charm is. Nudges pause,
+        /// but the trip (and any snooze or dismissal) carries on.
+        var isPaused = false
         /// Short signal drops shouldn't count.
         var wait: TimeInterval
         var snoozedUntil: Date?
@@ -21,7 +20,7 @@ nonisolated enum LeftBehindRules {
 
     /// When the nudge should go off, or `nil` if it shouldn't.
     static func nudgeDate(for input: Input) -> Date? {
-        guard let since = input.disconnectedSince, !input.isInsidePlace, !input.isDismissed else { return nil }
+        guard let since = input.disconnectedSince, !input.isPaused, !input.isDismissed else { return nil }
         let due = since.addingTimeInterval(input.wait)
         guard let snoozedUntil = input.snoozedUntil else { return due }
         return max(due, snoozedUntil)
@@ -30,7 +29,7 @@ nonisolated enum LeftBehindRules {
     /// Whether Home should say the charm stayed behind. Snoozing doesn't
     /// change this; the charm is still behind.
     static func isLeftBehind(_ input: Input, now: Date) -> Bool {
-        guard let since = input.disconnectedSince, !input.isInsidePlace, !input.isDismissed else { return false }
+        guard let since = input.disconnectedSince, !input.isPaused, !input.isDismissed else { return false }
         return since.addingTimeInterval(input.wait) <= now
     }
 }

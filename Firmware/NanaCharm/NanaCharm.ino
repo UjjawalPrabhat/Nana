@@ -4,10 +4,15 @@
 //
 // How it behaves:
 // - Stays connected to the iPhone all the time, so the app's left-behind nudge works.
-// - The slot sensors are off almost all the time. With the lid switch, they're read
-//   once, 2 s after the lid closes. Without it, they're read every second and a new
-//   count is sent once it has held for 2 s.
-// - The blue LED stays dark unless it's pairing, has just connected, or is asked to identify.
+// - With the lid switch: while the lid is open, the slots are read 4 times a second and
+//   a new count is sent live once it has held for 1 s. When the lid shuts, they're read
+//   one last time and then stay off; only the Bluetooth link stays up.
+// - Without it, they're read every second and a new count is sent once it has held for 2 s.
+// - Blue LED: one flash when the lid opens, two quick blinks when it shuts and the last
+//   count is taken. Otherwise dark unless it's pairing, has just connected, or is asked
+//   to identify.
+// - After the iPhone disconnects, it advertises fast for 30 s so the phone finds it again
+//   quickly, then slowly to save power.
 
 #include <NimBLEDevice.h>
 #include "driver/gpio.h"
@@ -16,7 +21,7 @@
 // ============ Settings you may need to change ============
 
 // Turn on once the reed switch is wired between LID_PIN and GND.
-const bool HAS_LID_SWITCH = false;
+const bool HAS_LID_SWITCH = true;
 
 // What LID_PIN reads when the lid is shut. Most 2-wire door reed switches are
 // "normally open": the magnet closes them, so shut reads LOW. If the log says
@@ -39,7 +44,7 @@ const bool SENSOR_POWER_FROM_GPIO = true;
 const int SLOT_COUNT = 3;
 const int SLOT_SIGNAL_PINS[SLOT_COUNT] = {4, 6, 0};
 const int SLOT_POWER_PINS[SLOT_COUNT] = {5, 7, 1};
-const int LID_PIN = 3;     // reed switch to a ground pin: LOW = lid shut
+const int LID_PIN = 3;     // reed switch to a ground pin; which level is "shut": LID_SHUT_LEVEL
 const int LED_PIN = 8;     // onboard blue LED: LOW = on
 const int BUTTON_PIN = 9;  // onboard BOOT button: LOW = pressed
 
@@ -56,6 +61,10 @@ const int GROUND_PINS[GROUND_PIN_COUNT] = {10, 20, 21};
 #define STOCK_CHAR    "ED573018-FB2B-4EEA-91C0-21E9287C1F6A"
 #define CAPACITY_CHAR "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052"
 #define COMMAND_CHAR  "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E"
+// Advertised instead of NANA_SERVICE while pairing. No GATT service behind it: it only
+// tells the app's pairing sheet which charm to list (Docs/BLE_SPEC.md 2).
+#define PAIRING_SERVICE "8029197C-AEF8-4F54-8155-96DBF7774EB0"
+#define ADVERTISED_NAME "Nana"   // neutral, never describes the contents
 
 const uint8_t PACKET_VERSION = 1;
 const uint8_t FLAG_COUNT_VALID = 1 << 0;
@@ -65,7 +74,9 @@ const uint8_t CMD_IDENTIFY = 0x01;
 
 // ============ Timing ============
 
-const uint32_t STABLE_MS = 2000;          // SEN-5: slots must hold still this long
+const uint32_t OPEN_POLL_MS = 250;        // lid open: how often the slots are read
+const uint32_t OPEN_STABLE_MS = 1000;     // lid open: a count must hold this long to be sent
+const uint32_t STABLE_MS = 2000;          // without a lid switch (SEN-5)
 const uint32_t POLL_MS = 1000;            // without a lid switch
 const uint32_t LID_DEBOUNCE_MS = 50;
 const uint32_t FAST_ADVERTISING_MS = 30000;
@@ -91,10 +102,18 @@ volatile bool wantsPublish = false;
 volatile uint16_t connHandle = 0;
 
 uint32_t fastAdvertisingUntil = 0;
+bool isPairing = false;  // fast advertising started by the button: the LED blinks
 uint32_t identifyUntil = 0;
 uint32_t connectFlashUntil = 0;
-bool needsReading = true;  // with the lid switch: read once the lid has been shut for 2 s
-uint32_t lidChangedAt = 0;
+uint32_t closeBlinkUntil = 0;
+uint32_t openFlashUntil = 0;
+
+// A slot reading that's polled and only accepted once it has held still.
+struct StableReader {
+  uint32_t lastPoll = 0;
+  int candidate = -1;
+  uint32_t since = 0;
+};
 
 // ============ Debug output ============
 
@@ -151,7 +170,7 @@ bool readSlot(int slot, bool log) {
 
 // SEN-2: the count is the number of filled slots. Sensors are read one at a time
 // so the battery never has to power more than one.
-// log: print each slot's reading. Off for the once-a-second polling, which would flood the log.
+// log: print each slot's reading. Off for repeated polling, which would flood the log.
 int readCount(bool log) {
   int filled = 0;
   for (int slot = 0; slot < SLOT_COUNT; slot++) {
@@ -219,15 +238,27 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks {
   }
 };
 
-void startAdvertising(bool fast) {
+// pairing: advertise PAIRING_SERVICE, the only ID the app's pairing sheet lists, so
+// with two charms in a room only the one whose button was just held shows up.
+void startAdvertising(bool fast, bool pairing) {
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->stop();
+  NimBLEAdvertisementData data;  // rebuilt each time, so the old service UUID doesn't linger
+  data.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
+  data.addServiceUUID(pairing ? PAIRING_SERVICE : NANA_SERVICE);
+  data.setName(ADVERTISED_NAME);
+  adv->setAdvertisementData(data);
   uint16_t interval = fast ? FAST_INTERVAL : SLOW_INTERVAL;
   adv->setMinInterval(interval);
   adv->setMaxInterval(interval);
   adv->start();
   fastAdvertisingUntil = fast ? millis() + FAST_ADVERTISING_MS : 0;
-  Serial.println(fast ? "Advertising fast (pairing) for 30 s" : "Advertising slowly");
+  isPairing = pairing;
+  Serial.println(pairing ? "Pairing mode for 30 s" : fast ? "Advertising fast for 30 s" : "Advertising slowly");
+}
+
+void startPairing() {
+  startAdvertising(true, true);
 }
 
 void setupBluetooth() {
@@ -252,17 +283,15 @@ void setupBluetooth() {
   info->createCharacteristic("2A26", NIMBLE_PROPERTY::READ)->setValue("0.1.0");
   info->start();
 
-  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-  adv->addServiceUUID(NANA_SERVICE);  // the app's pairing sheet finds the charm by this
-  adv->setName("Nana");               // neutral, never describes the contents
   publish();                          // so a read before the first count is "unknown"
-  startAdvertising(true);
+  startPairing();
 }
 
 void handleBluetoothEvents() {
   if (justConnected) {
     justConnected = false;
     fastAdvertisingUntil = 0;
+    isPairing = false;
     connectFlashUntil = millis() + 150;
     Serial.println("iPhone connected");
     // Slower connection events save power. Values follow Apple's accessory guidelines:
@@ -272,7 +301,9 @@ void handleBluetoothEvents() {
   if (justDisconnected) {
     justDisconnected = false;
     Serial.println("iPhone disconnected");
-    startAdvertising(false);  // keep advertising so the phone reconnects when it's back
+    // Fast at first so the phone reconnects quickly if it's still near, as Apple's
+    // accessory guidelines recommend; it drops to slow after 30 s.
+    startAdvertising(true, false);
   }
   if (wantsPublish) {
     wantsPublish = false;
@@ -284,21 +315,45 @@ void handleBluetoothEvents() {
     Serial.println("Identify");
   }
   if (fastAdvertisingUntil && !isConnected && (int32_t)(millis() - fastAdvertisingUntil) > 0) {
-    startAdvertising(false);
+    startAdvertising(false, false);
   }
 }
 
 // ============ Lid and count ============
+
+const char* lidPinText() {
+  return digitalRead(LID_PIN) ? "HIGH" : "LOW";
+}
+
+// Reads the slots every pollMs and sends a count once it has held for stableMs.
+void pollStable(StableReader& r, uint32_t pollMs, uint32_t stableMs) {
+  if (millis() - r.lastPoll < pollMs) return;
+  r.lastPoll = millis();
+  int reading = readCount(false);
+  if (reading != r.candidate) {
+    r.candidate = reading;
+    r.since = millis();
+    debugf("[poll] slots now read %d, sending if it holds for %lu ms\n", reading, (unsigned long)stableMs);
+  }
+  if (r.candidate != count && millis() - r.since >= stableMs) {
+    count = r.candidate;
+    publish();
+  }
+}
 
 bool readLidOpenRaw() {
   // Pull-up on: with a normally-open switch, magnet away leaves the pin HIGH.
   return digitalRead(LID_PIN) != LID_SHUT_LEVEL;
 }
 
+// Lid open: the slots are read every OPEN_POLL_MS and a count is sent live once it
+// has held for OPEN_STABLE_MS. Lid shut: one last read, then the sensors stay off.
 void updateWithLidSwitch() {
   static bool rawOpen = readLidOpenRaw();
   static uint32_t rawSince = millis();
   static uint32_t edges = 0;
+  static bool needsFinalRead = true;  // also gives a count after power-on with the lid shut
+  static StableReader reader;
 
   bool raw = readLidOpenRaw();
   if (raw != rawOpen) {
@@ -311,39 +366,32 @@ void updateWithLidSwitch() {
   }
   if (rawOpen != lidOpen && millis() - rawSince >= LID_DEBOUNCE_MS) {
     lidOpen = rawOpen;
-    lidChangedAt = millis();
-    Serial.println(lidOpen ? "Lid opened" : "Lid closed");
+    Serial.println(lidOpen ? "Lid opened: sensors on" : "Lid closed");
     if (lidOpen) {
-      publish();  // SEN-4: an opening is logged, the count doesn't change
+      reader = StableReader();
+      reader.candidate = count;
+      reader.since = millis();
+      openFlashUntil = millis() + 150;  // one flash: the sensors are on
+      publish();  // SEN-4: an opening is logged; the count follows as it changes
     } else {
-      needsReading = true;
-      debugf("[lid] reading the slots in %lu ms if it stays shut\n", (unsigned long)STABLE_MS);
+      needsFinalRead = true;
     }
   }
-  if (!lidOpen && needsReading && millis() - lidChangedAt >= STABLE_MS) {
-    needsReading = false;
+
+  if (lidOpen) {
+    pollStable(reader, OPEN_POLL_MS, OPEN_STABLE_MS);
+  } else if (needsFinalRead) {
+    needsFinalRead = false;
     count = readCount(true);
     publish();  // sent after every close; the app ignores repeats
+    closeBlinkUntil = millis() + 400;  // two quick blinks: the last count is in
+    debugf("[lid] sensors off until the lid opens\n");
   }
 }
 
 void updateByPolling() {
-  static uint32_t lastPoll = 0;
-  static int candidate = -1;
-  static uint32_t candidateSince = 0;
-
-  if (millis() - lastPoll < POLL_MS) return;
-  lastPoll = millis();
-  int reading = readCount(false);
-  if (reading != candidate) {
-    candidate = reading;
-    candidateSince = millis();
-    debugf("[poll] slots now read %d, sending if it holds for %lu ms\n", reading, (unsigned long)STABLE_MS);
-  }
-  if (candidate != count && millis() - candidateSince >= STABLE_MS) {
-    count = candidate;
-    publish();
-  }
+  static StableReader reader;
+  pollStable(reader, POLL_MS, STABLE_MS);
 }
 
 // ============ Button and LED ============
@@ -358,7 +406,7 @@ void updateButton() {
       if (isConnected) {
         identifyUntil = millis() + IDENTIFY_MS;  // already paired and connected: just blink
       } else {
-        startAdvertising(true);
+        startPairing();
       }
     }
   } else {
@@ -372,9 +420,13 @@ void updateLed() {
   bool on = false;
   if ((int32_t)(identifyUntil - now) > 0) {
     on = (now / 100) % 2;  // fast blink
+  } else if ((int32_t)(closeBlinkUntil - now) > 0) {
+    on = ((closeBlinkUntil - now) / 100) % 2;  // two quick blinks after the lid shuts
   } else if ((int32_t)(connectFlashUntil - now) > 0) {
     on = true;  // one short flash on connect
-  } else if (fastAdvertisingUntil && !isConnected) {
+  } else if ((int32_t)(openFlashUntil - now) > 0) {
+    on = true;  // one flash when the lid opens
+  } else if (isPairing && !isConnected) {
     on = (now / 500) % 2;  // slow blink while pairing
   }
   digitalWrite(LED_PIN, on ? LOW : HIGH);
@@ -390,8 +442,8 @@ void printStatus() {
                 !adv->isAdvertising() ? "not advertising"
                   : fastAdvertisingUntil ? "advertising fast" : "advertising slowly",
                 !HAS_LID_SWITCH ? "n/a (HAS_LID_SWITCH off)" : lidOpen ? "open" : "shut",
-                digitalRead(LID_PIN) ? "HIGH" : "LOW",
-                count, HAS_LID_SWITCH && needsReading ? " (reading pending)" : "",
+                lidPinText(),
+                count, lidOpen ? " (sensors on)" : "",
                 (unsigned long)ESP.getFreeHeap());
 }
 
@@ -405,7 +457,7 @@ void watchLidPin() {
   Serial.println("[lid] watching the pin for 10 s. Move the magnet slowly.");
   for (int i = 0; i < 50; i++) {
     bool open = readLidOpenRaw();
-    Serial.printf("[lid] pin %s -> %s\n", digitalRead(LID_PIN) ? "HIGH" : "LOW", open ? "open" : "shut");
+    Serial.printf("[lid] pin %s -> %s\n", lidPinText(), open ? "open" : "shut");
     delay(200);
   }
 }
@@ -421,7 +473,7 @@ void handleSerialCommands() {
         publish();
         break;
       case 'l': watchLidPin(); break;
-      case 'p': startAdvertising(true); break;
+      case 'p': startPairing(); break;
       case 'i': identifyUntil = millis() + IDENTIFY_MS; break;
       case 'h': case '?': printHelp(); break;
       default: break;  // newlines and anything else
@@ -443,6 +495,9 @@ void updateDebug() {
 
 void setup() {
   Serial.begin(115200);
+  // Never wait for the Serial Monitor. By default a print can block for 100 ms when the
+  // board is on USB with nothing reading, which made the lid-open reads stall and burst.
+  Serial.setTxTimeoutMs(0);
   setCpuFrequencyMhz(80);  // the lowest speed Bluetooth runs at; saves power
 
   if (USE_GROUND_PINS) {
@@ -457,7 +512,9 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LID_PIN, INPUT_PULLUP);
   for (int slot = 0; slot < SLOT_COUNT; slot++) {
-    pinMode(SLOT_SIGNAL_PINS[slot], INPUT);
+    // Weakly held at the "empty" level, so a slot with no sensor attached reads
+    // empty instead of floating and picking up noise. A connected sensor overrides it.
+    pinMode(SLOT_SIGNAL_PINS[slot], BLOCKED_LEVEL == HIGH ? INPUT_PULLDOWN : INPUT_PULLUP);
     if (SENSOR_POWER_FROM_GPIO) {
       pinMode(SLOT_POWER_PINS[slot], OUTPUT);
       digitalWrite(SLOT_POWER_PINS[slot], LOW);
@@ -465,14 +522,12 @@ void setup() {
     }
   }
   lidOpen = HAS_LID_SWITCH && readLidOpenRaw();
-  lidChangedAt = millis();
-
   if (DEBUG) {
     delay(1500);  // give the Serial Monitor time to reattach after a reset
     Serial.printf("\n[boot] reset reason: %s\n", resetReasonText());
     Serial.printf("[boot] lid switch %s, shut reads %s, lid now %s (pin %s)\n",
                   HAS_LID_SWITCH ? "on" : "off", LID_SHUT_LEVEL ? "HIGH" : "LOW",
-                  readLidOpenRaw() ? "open" : "shut", digitalRead(LID_PIN) ? "HIGH" : "LOW");
+                  readLidOpenRaw() ? "open" : "shut", lidPinText());
     Serial.printf("[boot] blocked reads %s, sensors powered %s, CPU %lu MHz\n",
                   BLOCKED_LEVEL ? "HIGH" : "LOW", SENSOR_POWER_FROM_GPIO ? "from pins" : "from 3V3",
                   (unsigned long)getCpuFrequencyMhz());

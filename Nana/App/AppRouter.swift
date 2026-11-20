@@ -11,12 +11,33 @@ final class AppRouter {
 
     var cover: Cover? = AppRouter.initialCover
     var showsSettings = AppRouter.initialShowsSettings
+    /// Waiting for the Settings sheet to finish closing; see `settingsDidDismiss()`.
+    private var pendingCover: Cover?
 
+    /// Shows Home, or the stayed-behind screen over it, for a tapped nudge.
     func open(_ nudge: Nudge) {
-        switch nudge {
-        case .leftBehind: cover = .stayedBehind
-        case .lowSupply: cover = nil
+        let target: Cover? = nudge == .leftBehind ? .stayedBehind : nil
+        guard showsSettings else {
+            cover = target
+            return
         }
+        // SwiftUI can't present a cover while the Settings sheet is still up, so
+        // close Settings and present once it's gone.
+        pendingCover = target
+        showsSettings = false
+    }
+
+    /// Called from the Settings sheet's `onDismiss`.
+    func settingsDidDismiss() {
+        if let pendingCover { cover = pendingCover }
+        pendingCover = nil
+    }
+
+    /// Back to a bare Home, e.g. after Delete everything.
+    func reset() {
+        showsSettings = false
+        cover = nil
+        pendingCover = nil
     }
 
     // Debug builds accept `-NanaOpen guide|stayedBehind|settings` for screenshots and UI tests.

@@ -3,8 +3,8 @@ import Testing
 @testable import Nana
 
 struct HomeStateTests {
-    private func status(_ count: Int, _ source: SupplyEvent.Source = .charm) -> SupplyLedger.Status {
-        SupplyLedger.Status(count: count, updatedAt: Date(timeIntervalSince1970: 1_000_000), source: source)
+    private func status(_ count: Int) -> SupplyLedger.Status {
+        SupplyLedger.Status(count: count, updatedAt: Date(timeIntervalSince1970: 1_000_000))
     }
 
     @Test(arguments: [(3, HomeState.Variant.full), (2, .stocked), (1, .low), (0, .empty)])
@@ -23,15 +23,11 @@ struct HomeStateTests {
         #expect(state.isStale)
     }
 
-    @Test func aFixedCountIsTrustedWithoutTheCharm() {
-        let state = HomeState.make(status: status(1, .user), connection: .disconnected, isLeftBehind: false)
-        #expect(state.variant == .low)
-    }
-
     @Test func nothingRecordedYetIsUnknown() {
         let state = HomeState.make(status: nil, connection: .notPaired, isLeftBehind: false)
         #expect(state.variant == .unknown)
         #expect(state.countText == "–")
+        #expect(String(localized: state.countLabel) == "nothing\ncounted yet")
         #expect(!state.isPaired)
     }
 
@@ -44,7 +40,7 @@ struct HomeStateTests {
 
     @Test func onlyLowAndEmptyCarryANote() {
         for variant in HomeState.Variant.allCases {
-            let state = HomeState(variant: variant, count: 1, updatedAt: nil, source: .charm, isPaired: true)
+            let state = HomeState(variant: variant, count: 1, updatedAt: nil, isPaired: true)
             #expect((state.note != nil) == (variant == .low || variant == .empty))
         }
     }
