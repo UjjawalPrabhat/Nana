@@ -30,6 +30,7 @@ struct NanaApp: App {
         // Started here, not from a view: iOS relaunches the app in the background
         // for Bluetooth events, and no view appears then.
         containerStore.start()
+        Task { await DebugLog.enableIfAvailable() }
 
         _containerStore = State(initialValue: containerStore)
         _leftBehind = State(initialValue: leftBehind)

@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// One charm, one number. Reads the app's state and hands it to `HomeContent`.
+/// One Pod, one number. Reads the app's state and hands it to `HomeContent`.
 struct HomeView: View {
     @Query(SupplyEvent.latest) private var events: [SupplyEvent]
     @Environment(ContainerStore.self) private var containerStore
@@ -19,10 +19,14 @@ struct HomeView: View {
                 onPair: pair,
                 onTryDemo: { Task { await containerStore.startDemo() } },
                 onOpenGuide: { router.cover = .guide },
-                onOpenSettings: { router.showsSettings = true }
+                onOpenSettings: { router.showsSettings = true },
+                onOpenDebugger: DebugLog.isEnabled ? { router.showsDebugger = true } : nil
             )
         }
         .pairingFailedAlert(isPresented: $pairingFailed)
+        .task {
+            if DebugLog.isEnabled, AppRouter.opensDebugger { router.showsDebugger = true }
+        }
     }
 
     private func pair() {
@@ -54,6 +58,8 @@ struct HomeContent: View {
     var onTryDemo: () -> Void
     var onOpenGuide: () -> Void
     var onOpenSettings: () -> Void
+    /// Set only in Xcode and TestFlight builds: long-pressing the wordmark opens it.
+    var onOpenDebugger: (() -> Void)?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -84,19 +90,21 @@ struct HomeContent: View {
 
             Spacer(minLength: 12)
             ViewThatFits(in: .vertical) {
-                CharmView(count: state.charmCount, isDimmed: state.variant == .away)
-                CharmView(count: state.charmCount, isDimmed: state.variant == .away, scale: 0.7)
+                // The Pod is taller than the old Pod, so small screens step down in size.
+                PodView(count: state.podCount, isDimmed: state.variant == .away, scale: 0.85)
+                PodView(count: state.podCount, isDimmed: state.variant == .away, scale: 0.65)
+                PodView(count: state.podCount, isDimmed: state.variant == .away, scale: 0.5)
             }
             .rotationEffect(.degrees(-4))
             .frame(maxWidth: .infinity)
             Spacer(minLength: 12)
 
             if !state.isPaired {
-                // Without a charm Home has nothing to count, so lead the way to one.
+                // Without a Pod Home has nothing to count, so lead the way to one.
                 VStack(spacing: 4) {
-                    Button("Pair your charm", action: onPair)
+                    Button("Pair your Pod", action: onPair)
                         .nanaPrimaryButton()
-                    Button("No charm yet? Try a demo", action: onTryDemo)
+                    Button("No Pod yet? Try a demo", action: onTryDemo)
                         .nanaLinkButton(color: .cobalt)
                 }
                 .padding(.bottom, 12)
@@ -112,9 +120,13 @@ struct HomeContent: View {
     private var header: some View {
         HStack(spacing: 12) {
             Wordmark()
+                .onLongPressGesture { onOpenDebugger?() }
+                .accessibilityActions {
+                    if let onOpenDebugger { Button("Open debugger", action: onOpenDebugger) }
+                }
             if isDemo {
-                NoteChip(text: Text("Demo charm"))
-                    .accessibilityLabel("Using the demo charm")
+                NoteChip(text: Text("Demo Pod"))
+                    .accessibilityLabel("Using the demo Pod")
             }
             Spacer()
             NanaIconButton("Settings", systemImage: "gearshape", action: onOpenSettings)
@@ -127,7 +139,7 @@ struct HomeContent: View {
                 .font(.title2.weight(.semibold))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Your charm stayed behind").font(.nanaLabel)
+                Text("Your Pod stayed behind").font(.nanaLabel)
                 if let awaySince {
                     Text("Out of range since \(awaySince.formatted(date: .omitted, time: .shortened))")
                         .font(.nanaFootnote)

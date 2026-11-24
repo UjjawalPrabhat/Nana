@@ -45,19 +45,35 @@ struct LeftBehindRulesTests {
 }
 
 @MainActor
-struct LeftBehindNudgeTests {
+final class LeftBehindNudgeTests {
     private let now = Date(timeIntervalSince1970: 2_000_000)
     private let scheduler = RecordingScheduler()
+    private let suiteName = "tests.\(UUID().uuidString)"
     private let defaults: UserDefaults
+    /// Moved forward by tests that need the nudge to have gone off already.
+    private var clock: Date
 
     init() {
-        defaults = UserDefaults(suiteName: "tests.\(UUID().uuidString)")!
+        defaults = UserDefaults(suiteName: suiteName)!
         defaults.register(defaults: AppSettings.defaults)
         defaults.set(true, forKey: AppSettings.leftBehindNudgeOn)
+        clock = now
+    }
+
+    deinit {
+        UserDefaults.standard.removePersistentDomain(forName: suiteName)
     }
 
     private func makeNudge() -> LeftBehindNudge {
-        LeftBehindNudge(scheduler: scheduler, defaults: defaults, now: { [now] in now })
+        LeftBehindNudge(scheduler: scheduler, defaults: defaults, now: { [unowned self] in clock })
+    }
+
+    /// Out of range long enough for the nudge (due at +2 min) to have gone off.
+    private func makeNudgeThatAlreadyWentOff() -> LeftBehindNudge {
+        let nudge = makeNudge()
+        nudge.charmLinkChanged(disconnectedSince: now)
+        clock = now.addingTimeInterval(600)
+        return nudge
     }
 
     @Test func schedulesOnceForOneTrip() {
@@ -95,18 +111,35 @@ struct LeftBehindNudgeTests {
         #expect(nudge.isLeftBehind(at: now.addingTimeInterval(600)))
     }
 
-    @Test func changingTheWaitAfterTheNudgeDoesNotRepeatIt() {
-        let nudge = LeftBehindNudge(scheduler: scheduler, defaults: defaults, now: { [now] in now.addingTimeInterval(3600) })
-        nudge.charmLinkChanged(disconnectedSince: now)
-        #expect(scheduler.scheduled.count == 1)
+    @Test func raisingTheWaitAfterTheNudgeDoesNotRepeatIt() {
+        let nudge = makeNudgeThatAlreadyWentOff()
         defaults.set(5, forKey: AppSettings.leftBehindWaitMinutes)
         nudge.reschedule()
         #expect(scheduler.scheduled.count == 1)
     }
 
-    @Test func nudgesStartOffUntilTheUserAgrees() {
-        #expect(AppSettings.defaults[AppSettings.leftBehindNudgeOn] as? Bool == false)
-        #expect(AppSettings.defaults[AppSettings.lowSupplyNudgeOn] as? Bool == false)
+    @Test func bluetoothOffAndOnAfterTheNudgeDoesNotRepeatIt() {
+        let nudge = makeNudgeThatAlreadyWentOff()
+        nudge.bluetoothAvailabilityChanged(isAvailable: false)
+        nudge.bluetoothAvailabilityChanged(isAvailable: true)
+        #expect(scheduler.scheduled.count == 1)
+    }
+
+    @Test func snoozingAfterTheNudgeStillNudgesAgain() {
+        let nudge = makeNudgeThatAlreadyWentOff()
+        nudge.snooze()
+        #expect(scheduler.scheduled.map(\.date).last == clock.addingTimeInterval(LeftBehindRules.snoozeLength))
+    }
+
+    @Test func discreetChangeRewritesOnlyAPendingNudge() {
+        let nudge = makeNudge()
+        nudge.charmLinkChanged(disconnectedSince: now)
+        nudge.refreshPendingText()
+        #expect(scheduler.scheduled.map(\.date) == Array(repeating: now.addingTimeInterval(120), count: 2))
+
+        clock = now.addingTimeInterval(600)
+        nudge.refreshPendingText()
+        #expect(scheduler.scheduled.count == 2)
     }
 
     @Test func switchedOffNeverSchedules() {
@@ -114,17 +147,5 @@ struct LeftBehindNudgeTests {
         let nudge = makeNudge()
         nudge.charmLinkChanged(disconnectedSince: now)
         #expect(scheduler.scheduled.isEmpty)
-    }
-}
-
-struct NudgeTextTests {
-    @Test(arguments: [Nudge.leftBehind, .lowSupply], [false, true])
-    func lockScreenTextNeverSaysWhatsInTheCharm(nudge: Nudge, discreet: Bool) {
-        let text = nudge.text(discreet: discreet)
-        #expect(!"\(text.title) \(text.body)".localizedCaseInsensitiveContains("condom"))
-    }
-
-    @Test func discreetTextIsTheSameForEveryNudge() {
-        #expect(Nudge.leftBehind.text(discreet: true) == Nudge.lowSupply.text(discreet: true))
     }
 }

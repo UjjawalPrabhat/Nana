@@ -9,8 +9,13 @@ struct RootView: View {
         Group {
             if hasOnboarded {
                 HomeView()
-                    .sheet(isPresented: $router.showsSettings, onDismiss: router.settingsDidDismiss) {
+                    .sheet(isPresented: $router.showsSettings, onDismiss: router.sheetDidDismiss) {
                         NavigationStack { SettingsView() }
+                    }
+                    .sheet(isPresented: $router.showsDebugger, onDismiss: router.sheetDidDismiss) {
+                        NavigationStack {
+                            DebugView().nanaCloseButton { router.showsDebugger = false }
+                        }
                     }
                     .fullScreenCover(item: $router.cover) { cover in
                         switch cover {

@@ -11,7 +11,13 @@ nonisolated enum AppSettings {
 
     static let waitChoices = [1, 2, 5]
 
-    /// Debug builds accept `-NanaScreenshots YES`: the demo charm stands in for a
+    /// Saying yes to notifications is consent to both nudges.
+    static func turnOnNudges(in defaults: UserDefaults = .standard) {
+        defaults.set(true, forKey: lowSupplyNudgeOn)
+        defaults.set(true, forKey: leftBehindNudgeOn)
+    }
+
+    /// Debug builds accept `-NanaScreenshots YES`: the demo Pod stands in for a
     /// real one in App Store screenshots, so its "Demo" labels are hidden.
     static var isTakingScreenshots: Bool {
         #if DEBUG

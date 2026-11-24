@@ -37,14 +37,18 @@ struct PermissionsView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
         .nanaScreen()
-        .onNotificationAuthorization { if $0 { notifications = .allowed } }
+        // Already allowed (e.g. after Delete everything, which keeps the iOS
+        // permission): the card says "Allowed", so the nudges must be on too.
+        .onNotificationAuthorization { isAllowed in
+            if isAllowed, notifications != .allowed { turnOnNudges() }
+        }
     }
 
     private var bluetoothCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             cardTitle("Bluetooth", systemImage: "dot.radiowaves.left.and.right", tile: .banana, color: .butter)
-            Text("Reads the count and knows when your charm is out of range.")
-            Text(containerStore.isPaired ? "Allowed" : "Pair your charm later in Settings")
+            Text("Reads the count and knows when your Pod is out of range.")
+            Text(containerStore.isPaired && (!containerStore.usesDemo || AppSettings.isTakingScreenshots) ? "Allowed" : "Pair your Pod later in Settings")
                 .nanaPill(.butter)
         }
         .foregroundStyle(.butter)
@@ -55,7 +59,7 @@ struct PermissionsView: View {
     private var notificationsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             cardTitle("Notifications", systemImage: "bell", tile: .lilac, color: .cobalt)
-            Text("For left-behind and low-supply nudges. Allowing turns both on; switch either off in Settings. They never say what's in your charm, and you can make them fully discreet in Settings.")
+            Text("For left-behind and low-supply nudges. Allowing turns both on; switch either off in Settings. They never say what's in your Pod, and you can make them fully discreet in Settings.")
             switch notifications {
             case .unknown:
                 Button("Allow notifications") {
@@ -73,15 +77,17 @@ struct PermissionsView: View {
         .nanaCard(cornerRadius: 26, padding: 20)
     }
 
-    /// A yes here is the user's consent to both nudges, so they switch on with it.
     private func allowNotifications() async {
-        guard await NotificationScheduler.requestAuthorization() else {
+        if await NotificationScheduler.requestAuthorization() {
+            turnOnNudges()
+        } else {
             notifications = .denied
-            return
         }
+    }
+
+    private func turnOnNudges() {
         notifications = .allowed
-        UserDefaults.standard.set(true, forKey: AppSettings.lowSupplyNudgeOn)
-        UserDefaults.standard.set(true, forKey: AppSettings.leftBehindNudgeOn)
+        AppSettings.turnOnNudges()
         leftBehind.reschedule()
     }
 

@@ -1,4 +1,4 @@
-# Nana charm: hardware build guide
+# Nana Pod: hardware build guide
 
 Proof of concept: a plastic container with 3 condom slots that tells the Nana app how many are left.
 Work through the steps in order. Each step ends with a **checkpoint**. Don't move on until it passes.
@@ -81,7 +81,7 @@ The board has only one GND pin, so pins 10, 20 and 21 are held at 0 V by the fir
 
 **If an upload fails:** hold **BOOT**, tap **RESET**, let go of BOOT, then upload again. After uploading, tap **RESET** once.
 
-✅ **Checkpoint 0:** open `Steps/00_Hello` and press Upload. You see "Done uploading", the blue LED blinks once a second, and the Serial Monitor (115200 baud) prints "Hello from the Nana charm board".
+✅ **Checkpoint 0:** open `Steps/00_Hello` and press Upload. You see "Done uploading", the blue LED blinks once a second, and the Serial Monitor (115200 baud) prints "Hello from the Nana Pod board".
 
 ## Step 1: one sensor
 
@@ -110,23 +110,23 @@ If a sensor never changes while powered from its pin, it may need more current t
 
 ## Step 3: Bluetooth, tested with a phone app
 
-1. Upload `NanaCharm`. The Serial Monitor shows `Nana charm ready` and `Advertising fast (pairing)`, and the blue LED blinks slowly for 30 s.
+1. Upload `NanaCharm`. The Serial Monitor shows `Nana Pod ready` and `Pairing mode for 30 s`, and the blue LED blinks slowly for 30 s.
 2. On an iPhone, install **nRF Connect** (free). Scan, find **Nana**, tap **Connect**. The blue LED flashes once.
 3. Open the service starting `1153E3C4`:
    - **Stock** (`ED573018…`): tap the read arrow. You see 4 bytes, e.g. `01-01-02-FF` = version 1, count valid, **2 condoms**.
    - Tap the subscribe arrows on Stock, then change a slot. About 2 s later a new value arrives.
    - **Capacity** (`23F0CCF6…`) reads `03`.
    - **Command** (`5DE4E880…`): write the hex byte `01`. The LED blinks fast for 2 s.
-4. **Disconnect in nRF Connect** before step 4. The charm only takes one phone at a time.
+4. **Disconnect in nRF Connect** before step 4. The Pod only takes one phone at a time.
 
 ✅ **Checkpoint 3:** reading, notifying and identify all work.
 
 ## Step 4: pair with the Nana app
 
 1. Build the Nana app from Xcode onto a **real iPhone**. Bluetooth doesn't work in the Simulator.
-2. In the app: **Settings → Demo charm → Use demo charm** must be **off**. If you already paired the demo, choose **Forget this charm** first.
-3. On the charm, **hold BOOT for 3 s**. The LED blinks slowly, which means it's in pairing mode.
-4. In the app, tap **Pair your charm** within 30 s. Apple's sheet shows the Nana charm. Tap it and connect. Only a charm in pairing mode is listed, so a second charm in the room doesn't show up.
+2. In the app, the demo Pod must be off: if Settings shows a **Demo Pod** section, tap **Stop the demo** first.
+3. On the Pod, **hold BOOT for 3 s**. The LED blinks slowly, which means it's in pairing mode.
+4. In the app, tap **Pair your Pod** within 30 s. Apple's sheet shows the Nana Pod. Tap it and connect. Only a Pod in pairing mode is listed, so a second Pod in the room doesn't show up.
 5. Change a slot, wait 2 s. The number on Home updates.
 
 ✅ **Checkpoint 4:** the Home count follows the slots. Walk away with the phone until it disconnects (Home says out of range after the wait you picked). Walk back: it reconnects on its own within about 10 s.
@@ -135,7 +135,7 @@ If a sensor never changes while powered from its pin, it may need more current t
 
 When the reed switch has arrived and checkpoint 2 shows the lid working:
 
-1. In `NanaCharm`, set `HAS_LID_SWITCH = true` and upload.
+1. In `NanaCharm`, check `HAS_LID_SWITCH = true` (the default) and upload.
 2. Open the lid: the Serial Monitor shows `Lid opened: sensors on`. Change a slot: about 1 s later the count is sent, and the app's Home count follows while the lid is still open.
 3. Close the lid: one last reading is sent, then `sensors off until the lid opens`. Changing slots with the lid shut does nothing.
 4. Opening and closing without changing anything leaves the count unchanged.
@@ -152,7 +152,7 @@ When the reed switch has arrived and checkpoint 2 shows the lid working:
 
 ## Step 7: power (do this last)
 
-1. With USB power, use the multimeter in **current (mA)** mode to measure how much the charm draws while connected.
+1. With USB power, use the multimeter in **current (mA)** mode to measure how much the Pod draws while connected.
 2. Then try the CR2032. **USB unplugged**, holder switched off:
    - Holder red wire → **3V3**, black → **GND**.
    - Switch on.
@@ -164,19 +164,19 @@ When the reed switch has arrived and checkpoint 2 shows the lid working:
 
 - `[boot]` lines: why the board restarted (a **BROWNOUT** means the power supply sagged), the lid and sensor settings, and the Bluetooth address.
 - `[lid] raw open/shut` on every edge of the reed switch, before debouncing. A few edges per movement is normal bounce. Edges while nobody touches the lid mean a loose wire or a magnet too far away.
-- `[open] slots now read N` whenever the reading changes while the lid is open, and `slot N: blocked x/5` for each slot on the last read when the lid shuts. `(unsteady)` means the wrapper edge sits on the beam: adjust the guide.
+- `[poll] slots now read N` whenever the reading changes while the lid is open, and `slot N: blocked x/5` for each slot on the last read when the lid shuts. `(unsteady)` means the wrapper edge sits on the beam: adjust the guide.
 - `[ble]` lines: connect, connection parameters, notifications on/off, commands, and the disconnect reason.
 - A `[status]` line every 5 s: connected, advertising, lid, pin level, count.
 
-Type a letter in the Serial Monitor and press Enter: `s` status, `r` read the slots now and send, `l` print the lid pin for 10 s (move the magnet slowly to find its range), `p` pairing mode, `i` identify blink, `h` help.
+Type a letter in the Serial Monitor and press Enter: `s` status, `r` read the slots now and send, `d` check each slot sensor's wiring ("NO SIGNAL" means a loose S, V or G wire), `l` print the lid pin for 10 s (move the magnet slowly to find its range; the Pod does nothing else meanwhile), `p` pairing mode, `i` identify blink, `h` help.
 
-On the iPhone side, the app logs Bluetooth traffic to the Xcode console and Console.app (connect the phone, filter on category `charm`): every Stock packet in hex, and why a reading was or wasn't recorded.
+On the iPhone side, the app logs Bluetooth traffic to the Xcode console and Console.app (connect the phone, filter on category `Pod`): every Stock packet in hex, and why a reading was or wasn't recorded.
 
 Set `DEBUG = false` before measuring battery drain.
 
 ### Reed switch checks
 
-1. Set `HAS_LID_SWITCH = true` and upload.
+1. Check `HAS_LID_SWITCH = true` (the default) and upload.
 2. The `[boot]` line shows the lid state. If it says `open` with the lid shut (and `shut` with it open), the switch is normally-closed: set `LID_SHUT_LEVEL = HIGH`.
 3. If it always says `open` whatever the magnet does, the switch isn't reaching ground: check its wires go to GPIO3 and to GND (or GPIO21 with `USE_GROUND_PINS`).
 4. Type `l` and move the magnet away slowly. The distance where it flips should be comfortably more than the lid gap.
@@ -190,6 +190,6 @@ Set `DEBUG = false` before measuring battery drain.
 | Port doesn't show up | Try another cable (data, not charge-only). Hold BOOT while plugging in |
 | Upload fails | BOOT + RESET trick in step 0 |
 | nRF Connect doesn't see "Nana" | Hold BOOT 3 s for fast advertising. Make sure no other phone is connected |
-| App can't find the charm | Disconnect it in nRF Connect, hold BOOT 3 s, then pair again |
+| App can't find the Pod | Disconnect it in nRF Connect, hold BOOT 3 s, then pair again |
 | Bluetooth range is only a few metres | Known weakness of some Super Mini clones' antennas. Note it, and we'll see whether it matters |
 | A red light on the board is always on | The power LED. It's normal, and it does waste battery; we'll deal with it later |

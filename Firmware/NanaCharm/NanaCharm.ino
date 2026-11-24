@@ -1,4 +1,4 @@
-// Nana charm firmware, proof of concept.
+// Nana Pod firmware, proof of concept.
 // Speaks the Bluetooth contract in Docs/BLE_SPEC.md (v1). Board: ESP32-C3 Super Mini.
 // Wiring and the step-by-step build: Firmware/README.md
 //
@@ -62,7 +62,7 @@ const int GROUND_PINS[GROUND_PIN_COUNT] = {10, 20, 21};
 #define CAPACITY_CHAR "23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052"
 #define COMMAND_CHAR  "5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E"
 // Advertised instead of NANA_SERVICE while pairing. No GATT service behind it: it only
-// tells the app's pairing sheet which charm to list (Docs/BLE_SPEC.md 2).
+// tells the app's pairing sheet which Pod to list (Docs/BLE_SPEC.md 2).
 #define PAIRING_SERVICE "8029197C-AEF8-4F54-8155-96DBF7774EB0"
 #define ADVERTISED_NAME "Nana"   // neutral, never describes the contents
 
@@ -142,7 +142,7 @@ const char* disconnectReasonText(int reason) {
   switch (reason & 0xFF) {
     case 0x08: return "supervision timeout (out of range or signal lost)";
     case 0x13: return "the iPhone closed the link";
-    case 0x16: return "the charm closed the link";
+    case 0x16: return "the Pod closed the link";
     case 0x3D: return "MIC failure (encryption problem)";
     case 0x3E: return "connection failed to establish";
     default: return "see the Bluetooth HCI error codes";
@@ -239,7 +239,7 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks {
 };
 
 // pairing: advertise PAIRING_SERVICE, the only ID the app's pairing sheet lists, so
-// with two charms in a room only the one whose button was just held shows up.
+// with two Pods in a room only the one whose button was just held shows up.
 void startAdvertising(bool fast, bool pairing) {
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->stop();
@@ -448,8 +448,45 @@ void printStatus() {
 }
 
 void printHelp() {
-  Serial.println("Commands: s status | r read slots and send | l lid pin for 10 s");
-  Serial.println("          p pairing mode | i identify blink | h help");
+  Serial.println("Commands: s status | r read slots and send | d diagnose slot wiring");
+  Serial.println("          l lid pin for 10 s (pauses everything else) | p pairing mode | i identify | h help");
+}
+
+// Reads a pin with the chip's weak pull-up, then pull-down. A pin something is
+// driving reads the same both ways; a pin nothing drives follows the pull.
+const char* pinState(int pin) {
+  pinMode(pin, INPUT_PULLUP);
+  delay(2);
+  int up = digitalRead(pin);
+  pinMode(pin, INPUT_PULLDOWN);
+  delay(2);
+  int down = digitalRead(pin);
+  if (up != down) return "floating";
+  return up ? "driven HIGH" : "driven LOW";
+}
+
+// Tells a slot whose sensor isn't answering (loose S, V or G wire) apart from one
+// whose sensor works but sees nothing in its beam.
+void diagnoseSlots() {
+  Serial.println("[diag] slot wiring check (put a condom in a slot first to test detection)");
+  for (int slot = 0; slot < SLOT_COUNT; slot++) {
+    int pin = SLOT_SIGNAL_PINS[slot];
+    if (SENSOR_POWER_FROM_GPIO) digitalWrite(SLOT_POWER_PINS[slot], HIGH);
+    delay(10);
+    const char* on = pinState(pin);
+    if (SENSOR_POWER_FROM_GPIO) digitalWrite(SLOT_POWER_PINS[slot], LOW);
+    pinMode(pin, BLOCKED_LEVEL == HIGH ? INPUT_PULLDOWN : INPUT_PULLUP);  // back to normal
+
+    const char* verdict;
+    if (strcmp(on, "floating") == 0) {
+      verdict = "NO SIGNAL: the sensor isn't answering. Check its S wire, and that V and G are connected";
+    } else if ((strcmp(on, "driven HIGH") == 0) == (BLOCKED_LEVEL == HIGH)) {
+      verdict = "OK, beam BLOCKED (something is in the slot)";
+    } else {
+      verdict = "OK, beam CLEAR (nothing in the slot, or it isn't deep enough to reach the beam)";
+    }
+    Serial.printf("[diag] slot %d (S=GPIO%d): %s -> %s\n", slot + 1, pin, on, verdict);
+  }
 }
 
 // Prints the lid pin every 200 ms for 10 s, for checking the magnet's range.
@@ -472,6 +509,7 @@ void handleSerialCommands() {
         count = readCount(true);
         publish();
         break;
+      case 'd': diagnoseSlots(); break;
       case 'l': watchLidPin(); break;
       case 'p': startPairing(); break;
       case 'i': identifyUntil = millis() + IDENTIFY_MS; break;
@@ -535,7 +573,7 @@ void setup() {
 
   setupBluetooth();
   debugf("[boot] Bluetooth address %s\n", NimBLEDevice::getAddress().toString().c_str());
-  Serial.println("Nana charm ready");
+  Serial.println("Nana Pod ready");
   if (DEBUG) printHelp();
 }
 

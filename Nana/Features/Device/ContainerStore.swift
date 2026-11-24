@@ -2,14 +2,17 @@ import Foundation
 import OSLog
 import SwiftData
 
-/// App-wide state for the paired charm. Records stock readings as
-/// `SupplyEvent`s and tracks when the charm went out of range for the
+/// App-wide state for the paired Pod. Records stock readings as
+/// `SupplyEvent`s and tracks when the Pod went out of range for the
 /// left-behind nudge.
 @Observable
 final class ContainerStore {
     private(set) var connection: ContainerConnection = .notPaired
     private(set) var battery: Int?
-    /// When the charm went out of range. `nil` while connected or not paired.
+    /// The last Stock packet from the Pod, for the debugger.
+    private(set) var lastReading: StockReading?
+    private(set) var lastReadingAt: Date?
+    /// When the Pod went out of range. `nil` while connected or not paired.
     /// Bluetooth turning off doesn't change it; see `onAvailabilityChange`.
     private(set) var disconnectedSince: Date? {
         didSet {
@@ -27,7 +30,7 @@ final class ContainerStore {
 
     var isPaired: Bool { connection != .notPaired }
     var demo: DemoContainerTransport? { transport as? DemoContainerTransport }
-    /// The demo charm is paired and should be labelled as such (not while taking
+    /// The demo Pod is paired and should be labelled as such (not while taking
     /// App Store screenshots, where it stands in for a real one).
     var isDemoRunning: Bool { usesDemo && isPaired && !AppSettings.isTakingScreenshots }
 
@@ -35,8 +38,8 @@ final class ContainerStore {
     @ObservationIgnored private let modelContext: ModelContext
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let nudges: NudgeScheduling
-    /// What the charm reports it holds; only used to turn a fill level into a count.
-    @ObservationIgnored private var capacity = SupplyLedger.capacity
+    /// What the Pod reports it holds; used to turn a fill level into a count.
+    private(set) var capacity = SupplyLedger.capacity
 
     private static let useDemoKey = "useDemoContainer"
     private static let disconnectedSinceKey = "container.disconnectedSince"
@@ -64,7 +67,7 @@ final class ContainerStore {
         transport.start()
     }
 
-    /// Shows the pairing UI. Returns `true` if a charm was paired.
+    /// Shows the pairing UI. Returns `true` if a Pod was paired.
     func pair() async throws -> Bool {
         try await transport.pair()
     }
@@ -74,7 +77,7 @@ final class ContainerStore {
         clearDeviceInfo()
     }
 
-    /// Switches to the built-in demo charm and pairs it, so the app can be tried
+    /// Switches to the built-in demo Pod and pairs it, so the app can be tried
     /// (and reviewed) without hardware.
     func startDemo() async {
         setUsesDemo(true)
@@ -89,7 +92,7 @@ final class ContainerStore {
         try? modelContext.save()
     }
 
-    func setUsesDemo(_ usesDemo: Bool) {
+    private func setUsesDemo(_ usesDemo: Bool) {
         guard usesDemo != self.usesDemo else { return }
         defaults.set(usesDemo, forKey: Self.useDemoKey)
         transport.onEvent = nil
@@ -108,6 +111,8 @@ final class ContainerStore {
     private func clearDeviceInfo() {
         battery = nil
         disconnectedSince = nil
+        lastReading = nil
+        lastReadingAt = nil
     }
 
     // MARK: Events
@@ -121,6 +126,7 @@ final class ContainerStore {
     private func handle(_ event: ContainerEvent) {
         switch event {
         case .connection(let state):
+            if state != connection { DebugLog.add("Connection: \(state)\(usesDemo ? " (demo)" : "")") }
             connection = state
             onAvailabilityChange?(state != .unavailable)
             switch state {
@@ -132,6 +138,8 @@ final class ContainerStore {
                 break
             }
         case .stock(let reading):
+            lastReading = reading
+            lastReadingAt = .now
             record(reading)
         case .capacity(let value):
             capacity = value
@@ -143,20 +151,20 @@ final class ContainerStore {
     private func record(_ reading: StockReading) {
         // Counts arrive live while the lid is open (Docs/BLE_SPEC.md 3.2), so they're recorded either way.
         guard let estimate = reading.estimatedCount(capacity: capacity) else {
-            Logger.charm.debug("Reading not recorded: no count or level")
+            DebugLog.add("Reading not recorded: no count or level")
             return
         }
         // Clamped like the stored count is when shown, so the two compare equal.
         let count = SupplyLedger.clamped(estimate)
         let current = (try? modelContext.fetch(SupplyEvent.latest))?.first
         let previous = current?.status.count
-        // Reconnects re-send the same reading; only log real changes.
+        // Reconnects re-send the same reading; only record real changes.
         guard previous != count else {
-            Logger.charm.debug("Reading not recorded: count \(count) unchanged")
+            DebugLog.add("Reading not recorded: count \(count) unchanged")
             return
         }
-        Logger.charm.debug("Recorded count \(count) (was \(previous ?? -1))")
-        // Only the current count is kept: no timeline of when condoms left the charm.
+        DebugLog.add("Recorded count \(count) (was \(previous ?? -1))")
+        // Only the current count is kept: no timeline of when condoms left the Pod.
         if let current {
             current.amount = count
             current.date = .now
@@ -173,7 +181,7 @@ final class ContainerStore {
 
     /// Earlier builds kept every reading. Drops all but the newest.
     private func keepOnlyLatestReading() {
-        let all = (try? modelContext.fetch(FetchDescriptor<SupplyEvent>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        let all = (try? modelContext.fetch(FetchDescriptor<SupplyEvent>(sortBy: [SupplyEvent.newestFirst]))) ?? []
         guard all.count > 1 else { return }
         all.dropFirst().forEach(modelContext.delete)
         try? modelContext.save()
@@ -190,7 +198,7 @@ final class ContainerStore {
 
 #if DEBUG
 extension ContainerStore {
-    /// In-memory store with a demo charm, for previews.
+    /// In-memory store with a demo Pod, for previews.
     /// Kept alive for the whole preview session: a context whose container has been
     /// released traps on its next save.
     private static let previewContainer = try! ModelContainer(

@@ -8,7 +8,7 @@ nonisolated enum PartnerInfo {
     static let website = URL(string: "https://keepnana.com")!
     /// The public copy of the privacy policy, also given to App Store Connect.
     static let privacyPolicyURL = URL(string: "https://keepnana.com/privacy")!
-    static let policyUpdated = DateComponents(calendar: .current, year: 2026, month: 10, day: 26).date!
+    static let policyUpdated = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 10, day: 26).date!
 }
 
 /// A page of outlined cards with a big title, shared by Privacy and Health.
@@ -70,19 +70,19 @@ struct PrivacyPolicyView: View {
     var body: some View {
         InfoPage(title: "Your privacy,\nin plain words", intro: "Nana keeps a count, not a diary. Here is everything it touches.") {
             InfoCard(title: "Stays on this phone", systemImage: "iphone") {
-                Text("How many condoms are in your charm right now and when that last changed, when your charm last went out of range, your charm's pairing ID and your settings. Only the current count is kept, never a history. Like the rest of your phone, it's included in your iPhone backup if you use one.")
+                Text("How many condoms are in your Pod right now and when that last changed, when your Pod last went out of range, your Pod's pairing ID and your settings. Only the current count is kept, never a history. Like the rest of your phone, it's included in your iPhone backup if you use one.")
             }
             InfoCard(title: "Never asked, never stored", systemImage: "nosign", tile: .tangerine, fill: .cobalt, foreground: .butter) {
-                Text("Your sex life, partners, health status, test results, contacts or photos. A count going down only means a condom left the charm. Nana never guesses why.")
+                Text("Your sex life, partners, health status, test results, contacts or photos. A count going down only means a condom left the Pod. Nana never guesses why.")
             }
             InfoCard(title: "Leaves your phone", systemImage: "arrow.up.right", tile: .lilac) {
                 Text("Nothing by default. No account, no ads, no tracking, no analytics. If this changes, Nana asks you first and tells you what and why.")
             }
             InfoCard(title: "On your lock screen", systemImage: "bell", tile: .butter) {
-                Text("A nudge says what happened, like “Your charm stayed behind”, but never what's in your charm. Turn on Discreet notifications in Settings and every nudge only says “You have a reminder.”")
+                Text("A nudge says what happened, like “Your Pod stayed behind”, but never what's in your Pod. Turn on Discreet notifications in Settings and every nudge only says “You have a reminder.”")
             }
             InfoCard(title: "Your controls") {
-                Text("Turn off notifications any time in Settings. Delete everything and Nana forgets your charm and your history on this phone.")
+                Text("Turn off notifications any time in Settings. Delete everything and Nana forgets your Pod and your history on this phone.")
                 Button("Delete everything") { confirmsDelete = true }
                     .nanaSecondaryButton()
                     .disabled(isDeleting)
@@ -106,7 +106,7 @@ struct PrivacyPolicyView: View {
         .confirmationDialog("Delete everything?", isPresented: $confirmsDelete, titleVisibility: .visible) {
             Button("Delete everything", role: .destructive) { Task { await eraseAll() } }
         } message: {
-            Text("Nana forgets your charm and your count on this phone. This can't be undone.")
+            Text("Nana forgets your Pod and your count on this phone. This can't be undone.")
         }
         .alert(
             "Couldn't delete everything",
@@ -116,8 +116,8 @@ struct PrivacyPolicyView: View {
             Button("OK", role: .cancel) {}
         } message: { failure in
             switch failure {
-            case .history: Text("Your charm was unpaired, but your count history couldn't be deleted. Try again.")
-            case .unpair: Text("Your charm couldn't be unpaired, so nothing was deleted. Try again.")
+            case .history: Text("Your Pod was unpaired, but your count history couldn't be deleted. Try again.")
+            case .unpair: Text("Your Pod couldn't be unpaired, so nothing was deleted. Try again.")
             }
         }
     }
@@ -146,7 +146,7 @@ struct HealthSafetyView: View {
                 Text("If latex makes your skin itch or burn, switch to non-latex condoms made of polyurethane or polyisoprene, and see a doctor.")
             }
             InfoCard(title: "Keep them cool", fill: .lilac) {
-                Text("Heat and sharp objects damage condoms. Don't leave your charm on a motorbike seat in the sun or in a hot car. Skip any condom past its date or with a torn wrapper.")
+                Text("Heat and sharp objects damage condoms. Don't leave your Pod on a motorbike seat in the sun or in a hot car. Skip any condom past its date or with a torn wrapper.")
             }
             Link(destination: URL(string: "tel:119")!) {
                 HStack(spacing: 14) {

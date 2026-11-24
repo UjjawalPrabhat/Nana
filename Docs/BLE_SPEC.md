@@ -24,7 +24,7 @@ The iPhone pairs with the container through Apple's **AccessorySetupKit** picker
 | Interval | 100–200 ms for the first 30 s after power-on or the pairing button; then 1–2 s to save battery |
 | Address | LE privacy (resolvable private address) recommended so the container can't be tracked |
 
-Holding the **pairing button** for 3 s enters pairing mode for 30 s: fast advertising with the pairing UUID in place of the Nana service UUID. The pairing UUID has no GATT service behind it; it only tells the app's pairing sheet which container to list, so with two containers in a room only the one whose button was held shows up. The container also enters pairing mode at power-on. After a disconnect it advertises fast under `Nana` for 30 s, so the phone reconnects quickly, then slowly. On the proof-of-concept board this is the ESP32-C3's BOOT button (GPIO9); its final place on the charm isn't decided.
+Holding the **pairing button** for 3 s enters pairing mode for 30 s: fast advertising with the pairing UUID in place of the Nana service UUID. The pairing UUID has no GATT service behind it; it only tells the app's pairing sheet which container to list, so with two containers in a room only the one whose button was held shows up. The container also enters pairing mode at power-on. After a disconnect it advertises fast under `Nana` for 30 s, so the phone reconnects quickly, then slowly. On the proof-of-concept board this is the ESP32-C3's BOOT button (GPIO9); its final place on the Pod isn't decided.
 
 ## 3. GATT
 
@@ -33,7 +33,7 @@ Holding the **pairing button** for 3 s enters pairing mode for 30 s: fast advert
 | Characteristic | UUID | Properties | Format |
 |---|---|---|---|
 | Stock | `ED573018-FB2B-4EEA-91C0-21E9287C1F6A` | Read, Notify | 4 bytes, see 3.2 |
-| Capacity | `23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052` | Read | `u8`: max items the container holds (3 on the charm) |
+| Capacity | `23F0CCF6-2D84-4B5E-B9A1-AF7337D3B052` | Read | `u8`: max items the container holds (3 on the Pod) |
 | Command | `5DE4E880-7AB1-4F92-9603-7EE3BA3BD02E` | Write (with response) | `u8` opcode, see 3.3 |
 
 ### 3.2 Stock packet (4 bytes, little-endian where it matters)
@@ -48,7 +48,7 @@ Holding the **pairing button** for 3 s enters pairing mode for 30 s: fast advert
 This works whichever sensor the hardware team picks:
 
 - **The sensor gives an exact count** (e.g. per-slot switches or IR): set `countValid`. `levelPercent` is optional.
-- **The sensor gives a level only** (e.g. load cell or ToF distance): set `levelValid` only. The app converts the level to an estimated count (`round(level / 100 × capacity)`) and labels it as an estimate.
+- **The sensor gives a level only** (e.g. load cell or ToF distance): set `levelValid` only. The app converts the level to an estimated count (`round(level / 100 × capacity)`).
 
 Example: 3 items, exact count, lid closed → `01 01 03 FF`.
 
@@ -68,7 +68,7 @@ Example: 3 items, exact count, lid closed → `01 01 03 FF`.
 | `0x02` | calibrateEmpty | Stores the current sensor value as "empty" |
 | `0x03` | calibrateFull | Stores the current sensor value as "full" (= capacity) |
 
-Unknown opcodes → respond with ATT error `0x80` (application error).
+Unknown opcodes may be ignored. (The proof-of-concept firmware accepts every write and acts only on `identify`.)
 
 > App support in v1: the app sends no commands yet and ignores the `needsCalibration` flag. Calibration UI comes later, so firmware may calibrate from the button for now.
 
@@ -91,7 +91,7 @@ Unknown opcodes → respond with ATT error `0x80` (application error).
 1. The container accepts reconnection from a bonded iPhone at any time. The app reconnects in the background (CoreBluetooth state restoration) to receive Stock notifications.
 2. **The app treats a dropped connection as "out of range".** After the wait the user picks (1, 2 or 5 minutes), it sends the left-behind nudge. So the firmware must never drop an idle connection on its own (no idle timeout, no sleep that ends the link) and should keep advertising while disconnected so the phone reconnects as soon as it is back in range.
 3. One connection at a time is fine.
-4. After power loss, the last calibration values persist (NVS/flash).
+4. After power loss, any calibration values persist (NVS/flash). The per-slot sensors on the proof of concept need none.
 
 ## 6. Reference firmware
 
@@ -99,7 +99,7 @@ The proof-of-concept firmware is [`Firmware/NanaCharm`](../Firmware/NanaCharm/Na
 
 ## 7. Testing without hardware
 
-- **iOS Simulator:** the app's demo charm (Settings → Demo charm, Debug builds) implements this contract in memory.
+- **iOS Simulator:** the app's demo Pod ("No Pod yet? Try a demo", in every build) implements this contract in memory.
 - **Real iPhone, no hardware:** run `swift Tools/NanaPeripheralSim/main.swift` on a Mac. The Mac advertises as a Nana container, and you type a number to change the count.
 - **Generic tools:** nRF Connect or LightBlue can read and write the characteristics above.
 

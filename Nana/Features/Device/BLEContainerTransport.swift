@@ -18,7 +18,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     /// Reports "out of range" if a connect attempt hasn't succeeded in time.
     private var connectTimeout: Task<Void, Never>?
 
-    /// How long "Connecting" shows before the charm counts as out of range.
+    /// How long "Connecting" shows before the Pod counts as out of range.
     private static let connectGrace: Duration = .seconds(10)
 
     func start() {
@@ -29,13 +29,13 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
 
     func pair() async throws -> Bool {
         guard pickerContinuation == nil else { return false }  // the picker is already up
-        // Only a charm in pairing mode (button just held) advertises this ID, so with
-        // two charms in a room only that one is listed.
+        // Only a Pod in pairing mode (button just held) advertises this ID, so with
+        // two Pods in a room only that one is listed.
         let descriptor = ASDiscoveryDescriptor()
         descriptor.bluetoothServiceUUID = .nanaPairing
         let item = ASPickerDisplayItem(
-            name: String(localized: "Nana charm"),
-            productImage: .charmProduct,
+            name: String(localized: "Nana Pod"),
+            productImage: .podProduct,
             descriptor: descriptor
         )
         return try await withCheckedThrowingContinuation { continuation in
@@ -53,7 +53,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     func forget() async throws {
         guard let accessory else { return }
         // Let go first, so the disconnect that follows isn't treated as "out of range"
-        // and doesn't start a new connect to the charm being removed.
+        // and doesn't start a new connect to the Pod being removed.
         let peripheral = self.peripheral
         release()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
@@ -71,18 +71,19 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     // MARK: AccessorySetupKit
 
     private func handle(_ event: ASAccessoryEvent) {
-        Logger.charm.debug("Setup event \(String(describing: event.eventType), privacy: .public)")
+        DebugLog.add("Setup event \(String(describing: event.eventType))")
         switch event.eventType {
         case .activated:
             accessory = session.accessories.first
             if accessory != nil { startCentral() } else { onEvent?(.connection(.notPaired)) }
         case .accessoryAdded:
             accessory = event.accessory
+            DebugLog.add("Paired accessory \(event.accessory?.bluetoothIdentifier?.uuidString ?? "with no Bluetooth ID")")
             startCentral()
             pickerContinuation?.resume(returning: true)
             pickerContinuation = nil
         case .accessoryRemoved:
-            // Also reached when the charm is removed in iOS Settings.
+            // Also reached when the Pod is removed in iOS Settings.
             if let peripheral { central?.cancelPeripheralConnection(peripheral) }
             release()
             onEvent?(.connection(.notPaired))
@@ -118,7 +119,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
     private func connectIfPossible() {
         guard let central, central.state == .poweredOn, let identifier = accessory?.bluetoothIdentifier else { return }
         guard let target = peripheral ?? central.retrievePeripherals(withIdentifiers: [identifier]).first else {
-            Logger.charm.error("No peripheral for the paired identifier \(identifier, privacy: .public)")
+            DebugLog.add("No peripheral for the paired identifier \(identifier)", isError: true)
             return
         }
         peripheral = target
@@ -129,8 +130,8 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         case .connecting:
             break
         default:
-            // No timeout: iOS keeps this pending and connects whenever the charm is in range.
-            Logger.charm.debug("Connect pending")
+            // No timeout: iOS keeps this pending and connects whenever the Pod is in range.
+            DebugLog.add("Connect pending")
             central.connect(target)
         }
     }
@@ -158,7 +159,7 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
         peripheral.discoverServices([.nanaService, .batteryService])
     }
 
-    /// Callbacks can still arrive for a charm that was just forgotten.
+    /// Callbacks can still arrive for a Pod that was just forgotten.
     private func isCurrent(_ peripheral: CBPeripheral) -> Bool {
         accessory != nil && peripheral === self.peripheral
     }
@@ -166,8 +167,8 @@ final class BLEContainerTransport: NSObject, ContainerTransport {
 
 extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        Logger.charm.debug("Bluetooth state \(central.state.rawValue)")
-        // With no charm paired, AccessorySetupKit withdraws Bluetooth access, which
+        DebugLog.add("Bluetooth state: \(central.state.debugName)")
+        // With no Pod paired, AccessorySetupKit withdraws Bluetooth access, which
         // reads as "unauthorized". That isn't Bluetooth being off, so it's ignored.
         guard accessory != nil else { return }
         if central.state == .poweredOn {
@@ -181,27 +182,27 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         if let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first {
-            Logger.charm.debug("Restored peripheral, state \(restored.state.rawValue)")
+            DebugLog.add("Restored peripheral, state \(restored.state.rawValue)")
             peripheral = restored
             restored.delegate = self
         }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        Logger.charm.debug("Connected")
+        DebugLog.add("Connected")
         guard isCurrent(peripheral) else { return }
         didBecomeConnected(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        Logger.charm.debug("Disconnected: \(error?.localizedDescription ?? "no error", privacy: .public)")
+        DebugLog.add("Disconnected: \(error?.localizedDescription ?? "no error")")
         guard isCurrent(peripheral) else { return }
         onEvent?(.connection(.disconnected))
         central.connect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        Logger.charm.error("Failed to connect: \(error?.localizedDescription ?? "no error", privacy: .public)")
+        DebugLog.add("Failed to connect: \(error?.localizedDescription ?? "no error")", isError: true)
         guard isCurrent(peripheral) else { return }
         onEvent?(.connection(.disconnected))
         // Wait before retrying, so a persistent failure doesn't become a tight loop.
@@ -215,7 +216,7 @@ extension BLEContainerTransport: @preconcurrency CBCentralManagerDelegate {
 extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         let found = peripheral.services?.map(\.uuid.uuidString).joined(separator: ", ") ?? "none"
-        Logger.charm.debug("Services: \(found, privacy: .public) \(error?.localizedDescription ?? "", privacy: .public)")
+        DebugLog.add("Services: \(found) \(error?.localizedDescription ?? "")")
         for service in peripheral.services ?? [] {
             peripheral.discoverCharacteristics(nil, for: service)
         }
@@ -223,7 +224,7 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         let found = service.characteristics?.map(\.uuid.uuidString).joined(separator: ", ") ?? "none"
-        Logger.charm.debug("Characteristics of \(service.uuid.uuidString, privacy: .public): \(found, privacy: .public)")
+        DebugLog.add("Characteristics of \(service.uuid.uuidString): \(found)")
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
             case .nanaStock, .batteryLevel:
@@ -239,17 +240,17 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard error == nil, let value = characteristic.value else {
-            Logger.charm.error("Read of \(characteristic.uuid.uuidString, privacy: .public) failed: \(error?.localizedDescription ?? "no value", privacy: .public)")
+            DebugLog.add("Read of \(characteristic.uuid.uuidString) failed: \(error?.localizedDescription ?? "no value")", isError: true)
             return
         }
         switch characteristic.uuid {
         case .nanaStock:
             let hex = value.map { String(format: "%02X", $0) }.joined(separator: " ")
             if let reading = StockPacket.parse(value) {
-                Logger.charm.debug("Stock \(hex, privacy: .public): count \(reading.count ?? -1), lid \(reading.lidOpen ? "open" : "shut", privacy: .public)")
+                DebugLog.add("Stock \(hex): count \(reading.count ?? -1), lid \(reading.lidOpen ? "open" : "shut")")
                 onEvent?(.stock(reading))
             } else {
-                Logger.charm.error("Stock \(hex, privacy: .public) rejected: wrong version or too short")
+                DebugLog.add("Stock \(hex) rejected: wrong version or too short", isError: true)
             }
         case .nanaCapacity:
             if let capacity = value.first, capacity > 0 { onEvent?(.capacity(Int(capacity))) }
@@ -257,6 +258,19 @@ extension BLEContainerTransport: @preconcurrency CBPeripheralDelegate {
             if let level = value.first { onEvent?(.battery(Int(min(level, 100)))) }
         default:
             break
+        }
+    }
+}
+
+private extension CBManagerState {
+    var debugName: String {
+        switch self {
+        case .poweredOn: "on"
+        case .poweredOff: "off"
+        case .unauthorized: "not allowed (no Pod paired)"
+        case .unsupported: "unsupported"
+        case .resetting: "resetting"
+        default: "unknown"
         }
     }
 }

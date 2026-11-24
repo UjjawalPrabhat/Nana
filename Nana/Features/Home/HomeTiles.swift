@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The two tiles under the charm: the left-behind switch and the guide.
+/// The two tiles under the Pod: the left-behind switch and the guide.
 /// Side by side, or stacked when the text is large.
 struct HomeTiles: View {
     var onOpenGuide: () -> Void

@@ -17,7 +17,7 @@ struct NudgeToggle<Label: View>: View {
             .toggleStyle(NanaToggleStyle())
             .onChange(of: isOn) { _, isOn in
                 onChange()
-                if isOn { Task { _ = await NotificationScheduler.requestAuthorization() } }
+                if isOn { Task { _ = await NotificationScheduler.requestOrOpenSettings() } }
             }
     }
 }

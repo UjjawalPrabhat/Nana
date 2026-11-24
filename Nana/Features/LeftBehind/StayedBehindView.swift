@@ -8,13 +8,18 @@ struct StayedBehindView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        // "Last connected 5 minutes ago" and the snooze note change with time alone.
+        TimelineView(.periodic(from: .now, by: 30)) { _ in content }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
                 NanaIconButton("Close", systemImage: "xmark") { dismiss() }
             }
 
-            Text("Your charm stayed behind")
+            Text("Your Pod stayed behind")
                 .nanaScreenTitle()
                 .padding(.top, 6)
             if let since = leftBehind.disconnectedSince {
@@ -23,7 +28,7 @@ struct StayedBehindView: View {
             }
 
             VStack(spacing: 18) {
-                CharmView(count: count, isDimmed: true, scale: 0.85)
+                PodView(count: count, isDimmed: true, scale: 0.8)
                     .rotationEffect(.degrees(-4))
                 if let since = leftBehind.disconnectedSince {
                     StatusChip(
@@ -49,7 +54,7 @@ struct StayedBehindView: View {
                     dismiss()
                 }
                 .nanaSecondaryButton()
-                Text("Nudges stop once your charm reconnects.")
+                Text("Nudges stop once your Pod reconnects.")
                     .font(.nanaFootnote)
                     .foregroundStyle(.inkSoft)
                     .multilineTextAlignment(.center)

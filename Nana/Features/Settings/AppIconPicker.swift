@@ -3,14 +3,14 @@ import SwiftUI
 /// Lets you swap to a plainer icon if others see your Home Screen.
 struct AppIconPicker: View {
     enum Icon: String, CaseIterable, Identifiable {
-        case charm, planner, plain
+        case pod, planner, plain
 
         var id: String { rawValue }
 
         /// `nil` is the primary icon.
         var alternateName: String? {
             switch self {
-            case .charm: nil
+            case .pod: nil
             case .planner: "AppIconPlanner"
             case .plain: "AppIconPlain"
             }
@@ -18,14 +18,14 @@ struct AppIconPicker: View {
 
         var title: LocalizedStringKey {
             switch self {
-            case .charm: "Charm"
+            case .pod: "Pod"
             case .planner: "Planner"
             case .plain: "Plain"
             }
         }
     }
 
-    @State private var selection = Icon.allCases.first { $0.alternateName == UIApplication.shared.alternateIconName } ?? .charm
+    @State private var selection = Icon.allCases.first { $0.alternateName == UIApplication.shared.alternateIconName } ?? .pod
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -80,7 +80,7 @@ private struct IconPreview: View {
     var body: some View {
         ZStack {
             switch icon {
-            case .charm:
+            case .pod:
                 Color.cobalt
                 Text(verbatim: "n")
                     .font(.nana(.condensedExtraBold, size: 44, relativeTo: .title))

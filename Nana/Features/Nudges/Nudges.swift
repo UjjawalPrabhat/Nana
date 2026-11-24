@@ -1,5 +1,5 @@
-import Foundation
 import OSLog
+import UIKit
 import UserNotifications
 
 /// Every notification Nana can send. Each kind has a fixed identifier, so a new
@@ -9,18 +9,18 @@ nonisolated enum Nudge: String, Sendable {
     case lowSupply = "nana.lowSupply"
 
     /// What the notification says. Useful, but a lock screen can be seen by
-    /// others, so it never says what the charm holds.
+    /// others, so it never says what the Pod holds.
     func text(discreet: Bool) -> (title: String, body: String) {
         if discreet {
             return (String(localized: "Nana"), String(localized: "You have a reminder."))
         }
         return switch self {
         case .leftBehind: (
-            String(localized: "Your charm stayed behind"),
+            String(localized: "Your Pod stayed behind"),
             String(localized: "It's out of range. Head back for it, or open Nana to snooze.")
         )
         case .lowSupply: (
-            String(localized: "Your charm is running low"),
+            String(localized: "Your Pod is running low"),
             String(localized: "Restock before you head out.")
         )
         }
@@ -35,7 +35,7 @@ protocol NudgeScheduling: AnyObject {
 }
 
 /// Local notifications. Their text says what happened without naming what's in
-/// the charm, and can be made fully generic in Settings.
+/// the Pod, and can be made fully generic in Settings.
 final class NotificationScheduler: NSObject, NudgeScheduling {
     /// Called when someone taps a nudge.
     var onOpen: ((Nudge) -> Void)?
@@ -51,6 +51,14 @@ final class NotificationScheduler: NSObject, NudgeScheduling {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
+    /// Asks the first time. After a "Don't allow" only iOS Settings can turn
+    /// notifications on, so that opens instead. Returns whether nudges can arrive.
+    static func requestOrOpenSettings() async -> Bool {
+        if await requestAuthorization() { return true }
+        await UIApplication.shared.open(.notificationSettings)
+        return false
+    }
+
     static func isAuthorized() async -> Bool {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .authorized
     }
@@ -64,12 +72,15 @@ final class NotificationScheduler: NSObject, NudgeScheduling {
         let delay = date.timeIntervalSinceNow
         // A nil trigger delivers right away; interval triggers must be positive.
         let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
+        DebugLog.add("Nudge \(nudge) scheduled for \(date.formatted(date: .omitted, time: .standard))", logger: .nudges)
         center.add(UNNotificationRequest(identifier: nudge.rawValue, content: content, trigger: trigger)) { error in
-            if let error { Logger.nudges.error("Could not schedule \(nudge.rawValue, privacy: .public): \(error)") }
+            guard let error else { return }
+            DebugLog.add("Could not schedule \(nudge): \(error.localizedDescription)", isError: true, logger: .nudges)
         }
     }
 
     func cancel(_ nudge: Nudge) {
+        DebugLog.add("Nudge \(nudge) cancelled", logger: .nudges)
         center.removePendingNotificationRequests(withIdentifiers: [nudge.rawValue])
         center.removeDeliveredNotifications(withIdentifiers: [nudge.rawValue])
     }
@@ -94,9 +105,6 @@ extension NotificationScheduler: UNUserNotificationCenterDelegate {
     }
 }
 
-private extension Logger {
-    nonisolated static let nudges = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Nana", category: "nudges")
-}
 
 #if DEBUG
 /// Drops every nudge. For previews.

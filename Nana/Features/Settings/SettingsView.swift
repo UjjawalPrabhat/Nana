@@ -48,7 +48,7 @@ private struct Chevron: View {
     }
 }
 
-// MARK: Your charm
+// MARK: Your Pod
 
 private struct CharmSection: View {
     @Environment(ContainerStore.self) private var containerStore
@@ -58,10 +58,10 @@ private struct CharmSection: View {
     @State private var pairingFailed = false
 
     var body: some View {
-        SettingsSection(title: "Your charm") {
+        SettingsSection(title: "Your Pod") {
             HStack(spacing: 14) {
-                CharmBadge(count: events.first?.status.count)
-                RowLabel(title: containerStore.isDemoRunning ? Text("Demo charm") : Text("Nana charm"),
+                PodBadge(count: events.first?.status.count)
+                RowLabel(title: containerStore.isDemoRunning ? Text("Demo Pod") : Text("Nana Pod"),
                          detail: Text(statusText))
             }
             .nanaCard(.lilac)
@@ -72,8 +72,8 @@ private struct CharmSection: View {
                 charmActions
             }
         }
-        .confirmationDialog("Forget this charm?", isPresented: $confirmsForget, titleVisibility: .visible) {
-            Button("Forget charm", role: .destructive) {
+        .confirmationDialog("Forget this Pod?", isPresented: $confirmsForget, titleVisibility: .visible) {
+            Button("Forget Pod", role: .destructive) {
                 Task {
                     do { try await containerStore.forget() } catch { forgetFailed = true }
                 }
@@ -84,7 +84,7 @@ private struct CharmSection: View {
         .alert("Something went wrong", isPresented: $forgetFailed) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Your charm couldn't be forgotten. Try again, or remove it in iOS Settings › Accessories.")
+            Text("Your Pod couldn't be forgotten. Try again, or remove it in iOS Settings › Accessories.")
         }
         .pairingFailedAlert(isPresented: $pairingFailed)
     }
@@ -92,12 +92,12 @@ private struct CharmSection: View {
     private var charmActions: some View {
         RowGroup {
             if containerStore.isPaired {
-                Button("Forget this charm", role: .destructive) { confirmsForget = true }
+                Button("Forget this Pod", role: .destructive) { confirmsForget = true }
                     .font(.nanaLabel)
                     .foregroundStyle(.destructive)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Button("Pair your charm") {
+                Button("Pair your Pod") {
                     Task {
                         // A cancelled sheet returns false; only real errors are shown.
                         do { _ = try await containerStore.pair() } catch { pairingFailed = true }
@@ -105,7 +105,7 @@ private struct CharmSection: View {
                 }
                 .font(.nanaLabel)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Button("No charm yet? Try a demo") {
+                Button("No Pod yet? Try a demo") {
                     Task { await containerStore.startDemo() }
                 }
                 .font(.nanaLabel)
@@ -133,7 +133,6 @@ private struct CharmSection: View {
 private struct NudgesSection: View {
     @AppStorage(AppSettings.leftBehindWaitMinutes) private var waitMinutes = 2
     @Environment(LeftBehindNudge.self) private var leftBehind
-    @Environment(\.openURL) private var openURL
     @State private var notificationsAllowed = true
     @AppStorage(AppSettings.leftBehindNudgeOn) private var leftBehindOn = false
     @AppStorage(AppSettings.lowSupplyNudgeOn) private var lowSupplyOn = false
@@ -153,7 +152,7 @@ private struct NudgesSection: View {
 
             RowGroup {
                 NudgeToggle(AppSettings.leftBehindNudgeOn, onChange: leftBehind.reschedule) {
-                    RowLabel("Left behind", detail: Text("When your charm stays out of range"))
+                    RowLabel("Left behind", detail: Text("When your Pod stays out of range"))
                 }
 
                 NudgeToggle(AppSettings.lowSupplyNudgeOn) {
@@ -169,7 +168,7 @@ private struct NudgesSection: View {
             }
             .nanaCard()
 
-            Text("Nana nudges you whenever your charm stays out of range for the wait time. Nudges pause while Bluetooth is off. If you force quit Nana, it can't tell when your charm comes back, so a nudge may arrive late or by mistake.")
+            Text("Nana nudges you whenever your Pod stays out of range for the wait time. Nudges pause while Bluetooth is off. If you force quit Nana, it can't tell when your Pod comes back, so a nudge may arrive late or by mistake.")
                 .font(.nanaFootnote)
                 .foregroundStyle(.inkSoft)
                 .padding(.horizontal, 4)
@@ -178,13 +177,8 @@ private struct NudgesSection: View {
         .onNotificationAuthorization { notificationsAllowed = $0 }
     }
 
-    /// Asks the first time; after a "Don't allow", only iOS Settings can turn them on.
     private func allowNotifications() async {
-        if await NotificationScheduler.requestAuthorization() {
-            notificationsAllowed = true
-        } else {
-            openURL(.notificationSettings)
-        }
+        notificationsAllowed = await NotificationScheduler.requestOrOpenSettings()
     }
 }
 
@@ -192,6 +186,7 @@ private struct NudgesSection: View {
 
 private struct PrivacySection: View {
     @AppStorage(AppSettings.discreetNudges) private var isDiscreet = false
+    @Environment(LeftBehindNudge.self) private var leftBehind
 
     var body: some View {
         let preview = Nudge.leftBehind.text(discreet: isDiscreet)
@@ -219,10 +214,13 @@ private struct PrivacySection: View {
 
             RowGroup {
                 Toggle(isOn: $isDiscreet) {
-                    RowLabel("Discreet notifications", detail: Text("Only show “You have a reminder.”"))
+                    RowLabel("Discreet notifications",
+                             detail: Text("Only show “\(Nudge.leftBehind.text(discreet: true).body)”"))
                 }
                 .toggleStyle(NanaToggleStyle())
             }
+            // A nudge already waiting was written with the old text.
+            .onChange(of: isDiscreet) { leftBehind.refreshPendingText() }
 
             AppIconPicker()
 
@@ -280,13 +278,13 @@ private struct AboutSection: View {
 
 // MARK: Demo
 
-/// Shown while the demo charm is in use: play out what a real charm would do.
+/// Shown while the demo Pod is in use: play out what a real Pod would do.
 private struct DemoSection: View {
     @Environment(ContainerStore.self) private var containerStore
 
     var body: some View {
         if let demo = containerStore.demo, containerStore.isDemoRunning {
-            SettingsSection(title: "Demo charm") {
+            SettingsSection(title: "Demo Pod") {
                 RowGroup {
                     Button("Take one out") { demo.simulateChange(by: -1) }
                     Button("Refill") { demo.simulateChange(by: SupplyLedger.capacity) }
@@ -299,7 +297,7 @@ private struct DemoSection: View {
                 }
                 .font(.nanaLabel)
                 .foregroundStyle(.cobalt)
-                Text("The demo charm acts like a real one, without Bluetooth. Walking away starts the left-behind wait you chose.")
+                Text("The demo Pod acts like a real one, without Bluetooth. Walking away starts the left-behind wait you chose.")
                     .font(.nanaFootnote)
                     .foregroundStyle(.inkSoft)
                     .padding(.horizontal, 4)

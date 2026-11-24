@@ -1,11 +1,11 @@
 import Foundation
 
-/// Keeps the left-behind nudge scheduled for the right moment. The charm's
+/// Keeps the left-behind nudge scheduled for the right moment. The Pod's
 /// link is pushed in by the app; this only decides.
 @Observable
 final class LeftBehindNudge {
     private(set) var disconnectedSince: Date?
-    private var isBluetoothOff = false
+    private(set) var isBluetoothOff = false
     private(set) var snoozedUntil: Date?
     private(set) var isDismissed: Bool
 
@@ -34,6 +34,12 @@ final class LeftBehindNudge {
             isDismissed: isDismissed
         )
     }
+
+    /// When the nudge is due for this trip, or `nil` if none is.
+    var nextNudgeDate: Date? { LeftBehindRules.nudgeDate(for: input) }
+
+    /// What was last handed to the notification scheduler.
+    var scheduledFor: Date? { defaults.object(forKey: Self.scheduledForKey) as? Date }
 
     /// Time-based, so views re-check it on a timer.
     func isLeftBehind(at date: Date) -> Bool {
@@ -69,20 +75,28 @@ final class LeftBehindNudge {
 
     /// Call after the on/off switch or the wait time changes.
     func reschedule() {
-        guard defaults.bool(forKey: AppSettings.leftBehindNudgeOn),
-              let date = LeftBehindRules.nudgeDate(for: input)
-        else {
+        guard defaults.bool(forKey: AppSettings.leftBehindNudgeOn), let date = nextNudgeDate else {
             scheduler.cancel(.leftBehind)
-            defaults.removeObject(forKey: Self.scheduledForKey)
+            // A nudge that already went off is remembered until the trip ends, so
+            // pausing (Bluetooth off) and resuming doesn't send it again.
+            if disconnectedSince == nil || (scheduledFor.map { $0 > now() } ?? true) {
+                defaults.removeObject(forKey: Self.scheduledForKey)
+            }
             return
         }
-        // Already scheduled, or already delivered: don't nudge twice for one trip.
-        let previous = defaults.object(forKey: Self.scheduledForKey) as? Date
+        let previous = scheduledFor
         guard previous != date else { return }
-        // Already went off, and the new time (e.g. after changing the wait) is past too.
-        if let previous, previous <= now(), date <= now() { return }
+        // One nudge per trip: once it has gone off, only a snooze brings it back.
+        if let previous, previous <= now(), date != snoozedUntil { return }
         scheduler.schedule(.leftBehind, at: date)
         defaults.set(date, forKey: Self.scheduledForKey)
+    }
+
+    /// Re-sends a nudge that hasn't gone off yet, so its text follows the
+    /// Discreet setting. The notification is replaced, not added.
+    func refreshPendingText() {
+        guard let date = scheduledFor, date > now() else { return }
+        scheduler.schedule(.leftBehind, at: date)
     }
 
     private func setSnoozed(until date: Date?) {

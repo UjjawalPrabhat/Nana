@@ -22,7 +22,7 @@ extension Font {
     static let nanaCount = nana(.condensedExtraBold, size: 200, relativeTo: .largeTitle)
     /// The count when a banner shares the screen.
     static let nanaCountSmall = nana(.condensedExtraBold, size: 150, relativeTo: .largeTitle)
-    /// "left in your charm" next to the count.
+    /// "left in your Pod" next to the count.
     static let nanaCountLabel = nana(.condensedBold, size: 34, relativeTo: .title)
     /// Welcome headline.
     static let nanaDisplay = nana(.condensedExtraBold, size: 78, relativeTo: .largeTitle)
@@ -56,7 +56,7 @@ extension View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    /// Tracked, uppercased section label: "YOUR CHARM".
+    /// Tracked, uppercased section label: "YOUR POD".
     func nanaCaptionStyle() -> some View {
         self
             .font(.nanaCaption)

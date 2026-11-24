@@ -1,7 +1,7 @@
 import Foundation
 
 /// In-memory container that speaks the same contract as the real one.
-/// Used in the Simulator, for demos, and until the hardware is ready.
+/// Used in the Simulator, and by anyone trying Nana without a Pod ("Try a demo").
 final class DemoContainerTransport: ContainerTransport {
     var onEvent: ((ContainerEvent) -> Void)?
 
@@ -19,7 +19,7 @@ final class DemoContainerTransport: ContainerTransport {
 
     private var count: Int {
         get { defaults.object(forKey: Self.countKey) as? Int ?? 2 }
-        set { defaults.set(min(max(newValue, 0), capacity), forKey: Self.countKey) }
+        set { defaults.set(SupplyLedger.clamped(newValue), forKey: Self.countKey) }
     }
 
     func start() {
@@ -48,7 +48,7 @@ final class DemoContainerTransport: ContainerTransport {
         publishStock()
     }
 
-    /// Simulates walking away from the charm, or coming back to it.
+    /// Simulates walking away from the Pod, or coming back to it.
     func simulateInRange(_ inRange: Bool) {
         guard isPaired else { return }
         if inRange { connect() } else { onEvent?(.connection(.disconnected)) }

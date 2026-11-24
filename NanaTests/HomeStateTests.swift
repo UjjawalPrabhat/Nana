@@ -19,7 +19,7 @@ struct HomeStateTests {
         let state = HomeState.make(status: status(2), connection: .disconnected, isLeftBehind: false)
         #expect(state.variant == .unknown)
         #expect(state.count == 2)
-        #expect(state.charmCount == nil)
+        #expect(state.podCount == nil)
         #expect(state.isStale)
     }
 
@@ -34,7 +34,7 @@ struct HomeStateTests {
     @Test func leftBehindWinsAndKeepsTheLastCount() {
         let state = HomeState.make(status: status(2), connection: .disconnected, isLeftBehind: true)
         #expect(state.variant == .away)
-        #expect(state.charmCount == 2)
+        #expect(state.podCount == 2)
         #expect(state.isStale)
     }
 

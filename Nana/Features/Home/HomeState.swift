@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Home shows, worked out from the ledger, the charm's link and the
+/// What Home shows, worked out from the ledger, the Pod's link and the
 /// left-behind check. Pure, so every variant on the board has a test.
 nonisolated struct HomeState: Equatable, Sendable {
     enum Variant: String, CaseIterable, Sendable {
@@ -40,14 +40,14 @@ nonisolated struct HomeState: Equatable, Sendable {
 
     var countText: String { count.map(String.init) ?? "–" }
 
-    /// The charm shows striped slots when the count can't be trusted, and the
-    /// last count (dimmed) when it's simply out of reach.
-    var charmCount: Int? { variant == .unknown ? nil : count }
+    /// The Pod stays shut when the count can't be trusted, and shows the last
+    /// count (dimmed) when it's simply out of reach.
+    var podCount: Int? { variant == .unknown ? nil : count }
 
     var countLabel: LocalizedStringResource {
         switch variant {
-        case .full: "in your charm.\nAll set."
-        case .stocked, .empty: "left in\nyour charm"
+        case .full: "in your Pod.\nAll set."
+        case .stocked, .empty: "left in\nyour Pod"
         case .low: "left.\nRestock soon."
         case .unknown where count == nil: "nothing\ncounted yet"
         case .unknown, .away: "last we\nknew"
@@ -60,7 +60,7 @@ nonisolated struct HomeState: Equatable, Sendable {
         case .away:
             return "Out of range"
         case .unknown:
-            if !isPaired { return "No charm paired" }
+            if !isPaired { return "No Pod paired" }
             guard let time else { return "Not connected yet" }
             return "Not updated since \(time)"
         case .full, .stocked, .low, .empty:

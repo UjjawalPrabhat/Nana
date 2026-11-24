@@ -344,9 +344,9 @@ struct ChoiceRow<Value: Hashable>: View {
                 NoteChip(text: Text("Running low"))
             }
             RowGroup {
-                Toggle(isOn: .constant(true)) { RowLabel("Left behind", detail: Text("When your charm stays out of range")) }
+                Toggle(isOn: .constant(true)) { RowLabel("Left behind", detail: Text("When your Pod stays out of range")) }
                     .toggleStyle(NanaToggleStyle())
-                Text("Forget this charm").font(.nanaLabel)
+                Text("Forget this Pod").font(.nanaLabel)
             }
             ChoiceRow(title: "Wait", options: [1, 2, 5], selection: .constant(2)) { Text("\($0) min") }
         }

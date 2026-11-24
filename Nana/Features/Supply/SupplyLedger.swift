@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure supply rules. Kept free of SwiftData and SwiftUI so it can be unit tested.
 nonisolated enum SupplyLedger {
-    /// Slots in the charm.
+    /// Slots in the Pod.
     static let capacity = 3
     /// "Running low" means one left.
     static let lowThreshold = 1
@@ -19,7 +19,7 @@ nonisolated enum SupplyLedger {
         case full
     }
 
-    /// Keeps a count within what the charm can hold.
+    /// Keeps a count within what the Pod can hold.
     static func clamped(_ count: Int) -> Int {
         min(max(count, 0), capacity)
     }

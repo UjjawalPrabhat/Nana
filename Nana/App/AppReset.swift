@@ -2,22 +2,22 @@ import SwiftData
 import UIKit
 import UserNotifications
 
-/// "Delete everything": forgets the charm, the count history, every setting and
+/// "Delete everything": forgets the Pod, the count history, every setting and
 /// every notification.
 enum AppReset {
     enum Failure: Error {
-        /// The charm couldn't be unpaired, so nothing was deleted.
+        /// The Pod couldn't be unpaired, so nothing was deleted.
         case unpair
         /// Unpaired, but the count history couldn't be deleted.
         case history
     }
 
     /// Unpairs first and stops if that fails, so the app never says "deleted"
-    /// while the charm is still paired.
+    /// while the Pod is still paired.
     static func eraseAll(modelContext: ModelContext, containerStore: ContainerStore, router: AppRouter) async throws(Failure) {
         do {
             // Leaving the demo also switches back to Bluetooth, so the next "Pair"
-            // looks for a real charm.
+            // looks for a real Pod.
             if containerStore.usesDemo {
                 await containerStore.stopDemo()
             } else {

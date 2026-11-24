@@ -53,15 +53,31 @@ func render(_ name: String, background: NSColor, draw: (CGContext) -> Void) thro
     try contents.write(toFile: "\(folder)/Contents.json", atomically: true, encoding: .utf8)
 }
 
-/// Charm: a Butter "n" on Cobalt, the wordmark's first letter.
+/// Nana: the Butter "n" on Cobalt, cropped by the bottom edge like the "n"
+/// printed on the Nana Pod. Same outline as `NanaGlyph` in the app.
 try render("AppIcon", background: cobalt) { context in
-    let font = NSFont(name: "BricolageGrotesqueCondensed-ExtraBold", size: 720)!
-    let line = CTLineCreateWithAttributedString(
-        NSAttributedString(string: "n", attributes: [.font: font, .foregroundColor: butter])
-    )
-    let ink = CTLineGetImageBounds(line, context)
-    context.textPosition = CGPoint(x: (size - ink.width) / 2 - ink.minX, y: (size - ink.height) / 2 - ink.minY)
-    CTLineDraw(line, context)
+    // Icon coordinates run top-down; Core Graphics runs bottom-up.
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: size - y) }
+    func arch(cx: CGFloat, cy: CGFloat, a: CGFloat, b: CGFloat) -> [CGPoint] {
+        (0...60).map { step in
+            let t = CGFloat.pi * CGFloat(step) / 60
+            let c = cos(t), s = sin(t)
+            return point(cx + a * (c < 0 ? -1 : 1) * pow(abs(c), 2 / 2.4), cy - b * pow(abs(s), 2 / 2.4))
+        }
+    }
+    func polygon(_ points: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
+        path.addLines(between: points)
+        path.closeSubpath()
+        return path
+    }
+    let stem = polygon([point(243, 1024), point(243, 189), point(424, 189), point(424, 1024)])
+    let bridge = polygon([point(420, 1024), point(420, 467), point(475, 467), point(475, 1024)])
+    let outer = polygon([point(782, 1024)] + arch(cx: 612, cy: 470, a: 170, b: 301) + [point(442, 1024)])
+    let counter = polygon([point(563, 1100)] + arch(cx: 512, cy: 560, a: 51, b: 166) + [point(461, 1100)])
+    context.addPath(stem.union(bridge).union(outer).subtracting(counter))
+    context.setFillColor(butter.cgColor)
+    context.fillPath()
 }
 
 /// Planner: a checkmark on Banana, reads like a to-do app.

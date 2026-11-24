@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// Welcome → pair the charm → two permissions → Home.
+/// Welcome → pair the Pod → two permissions → Home.
 /// Every step after Welcome can be skipped and done later from Settings.
 struct OnboardingFlow: View {
     var onFinish: () -> Void
@@ -62,7 +62,7 @@ struct WelcomeView: View {
 
             ZStack {
                 Circle().fill(.banana).frame(width: 250, height: 250).offset(x: 10, y: 36)
-                CharmView(count: 3, scale: 0.9)
+                PodView(count: 3, scale: 0.9)
                     .rotationEffect(.degrees(-7))
                     .offset(y: 30)
             }
@@ -74,7 +74,7 @@ struct WelcomeView: View {
                 .lineHeight(.multiple(factor: 0.86))
                 .foregroundStyle(.cobalt)
                 .accessibilityAddTraits(.isHeader)
-            Text("Nana counts what is in your charm and gives you a quiet nudge before you run out.")
+            Text("Nana counts what is in your Pod and gives you a quiet nudge before you run out.")
                 .font(.nana(.text, size: 18))
                 .padding(.top, 24)
                 .padding(.bottom, 26)

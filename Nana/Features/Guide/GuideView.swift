@@ -40,19 +40,20 @@ struct GuideView: View {
     }
 
     private var header: some View {
+        // Close sits top right, like every other screen that slides up.
         HStack {
-            NanaIconButton("Close", systemImage: "xmark") { dismiss() }
+            Text(isDone ? "Done" : "\(index + 1) / \(steps.count)")
+                .accessibilityLabel(isDone ? Text("Done") : Text("Step \(index + 1) of \(steps.count)"))
+                .font(.nanaLabelSmall)
+                .foregroundStyle(.inkSoft)
+                .frame(minWidth: 44, alignment: .leading)
             Spacer()
             Text("The fruit stand")
                 .font(.nanaWordmark)
                 .foregroundStyle(.cobalt)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
-            Text(isDone ? "Done" : "\(index + 1) / \(steps.count)")
-                .accessibilityLabel(isDone ? Text("Done") : Text("Step \(index + 1) of \(steps.count)"))
-                .font(.nanaLabelSmall)
-                .foregroundStyle(.inkSoft)
-                .frame(minWidth: 44, alignment: .trailing)
+            NanaIconButton("Close", systemImage: "xmark") { dismiss() }
         }
     }
 
