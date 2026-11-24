@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "pod-product.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
